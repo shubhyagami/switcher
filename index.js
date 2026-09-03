@@ -325,6 +325,7 @@ function handleControlConnection(ws, req, url) {
   const sessionId = Math.random().toString(36).slice(2, 9);
 
   if (ws._socket?.setNoDelay) ws._socket.setNoDelay(true);
+  if (ws._socket?.setKeepAlive) ws._socket.setKeepAlive(true, 15000);
 
   // Ping client for dashboard
   if (url.searchParams.get('client') === 'web-dashboard') {
@@ -405,6 +406,7 @@ function handleControlConnection(ws, req, url) {
 
         session = {
           sessionId,
+          clientId: msg.clientId || null,
           ws,
           clientIp: req.socket.remoteAddress,
           registeredTunnels: new Set(),
@@ -429,9 +431,36 @@ function handleControlConnection(ws, req, url) {
           let tid = (p.subdomain || p.name || genId()).toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-');
           if (!tid || tid.length < 2) tid = genId();
 
-          // Ensure unique
-          if (tunnels.has(tid) && tunnels.get(tid).session !== session) {
-            tid = `${tid}-${Math.floor(10 + Math.random() * 90)}`;
+          // Static domain retention: If tunnel was previously registered by an old/dropped session,
+          // reclaim and rebind it cleanly instead of appending random suffixes (e.g. -34)
+          const existingRoute = tunnels.get(tid);
+          if (existingRoute && existingRoute.session !== session) {
+            const oldSession = existingRoute.session;
+            console.log(`[⚡ STARK RELAY] Reclaiming static tunnel '${tid}' from previous session ${oldSession?.sessionId} to session ${sessionId}`);
+
+            if (oldSession) {
+              oldSession.registeredTunnels.delete(tid);
+
+              // Evict stale pending requests on the old session for this tunnel
+              for (const [reqId, pending] of oldSession.pendingRequests) {
+                if (pending.tunnelId === tid) {
+                  clearTimeout(pending.timer);
+                  if (!pending.res.headersSent) {
+                    pending.res.writeHead(502, { 'content-type': 'text/plain' });
+                    pending.res.end('Switcher Tunnel: Reconnected with new session');
+                  }
+                  oldSession.pendingRequests.delete(reqId);
+                }
+              }
+
+              // If the old session has no other active tunnels, terminate it to prevent ghost sockets
+              if (oldSession.registeredTunnels.size === 0) {
+                try {
+                  oldSession.ws.terminate();
+                } catch {}
+                sessions.delete(oldSession.sessionId);
+              }
+            }
           }
 
           const route = {
