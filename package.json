@@ -1,0 +1,16 @@
+{
+  "name": "switcher-tunnel-server",
+  "version": "1.0.0",
+  "description": "Render-ready ultra-fast relay server for Switcher Tunnel",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
