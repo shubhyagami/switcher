@@ -96,6 +96,31 @@ function resolveTunnel(req) {
     }
   }
 
+  // 5. Referer Fallback (for assets requested with root path e.g. /assets/... from inside a subpath tunnel)
+  if (req.headers.referer) {
+    try {
+      const refUrl = new URL(req.headers.referer);
+      const refMatch = refUrl.pathname.match(/^\/t\/([a-zA-Z0-9_-]+)(?:\/|$)/);
+      if (refMatch && tunnels.has(refMatch[1].toLowerCase())) {
+        const tid = refMatch[1].toLowerCase();
+        if (!url.startsWith('/health') && !url.startsWith('/api/') && !url.startsWith('/switcher-') && url !== '/' && url !== '/index.html') {
+          return { id: tid, path: url, mode: 'referer' };
+        }
+      }
+    } catch {}
+  }
+
+  // 6. Cookie Fallback (persists active tunnel for root-relative API/asset calls)
+  if (req.headers.cookie) {
+    const m = req.headers.cookie.match(/switcher_tunnel=([a-zA-Z0-9_-]+)/);
+    if (m && tunnels.has(m[1].toLowerCase())) {
+      const tid = m[1].toLowerCase();
+      if (!url.startsWith('/health') && !url.startsWith('/api/') && !url.startsWith('/switcher-') && url !== '/' && url !== '/index.html') {
+        return { id: tid, path: url, mode: 'cookie' };
+      }
+    }
+  }
+
   return null;
 }
 
@@ -133,6 +158,19 @@ const server = http.createServer({
       avgLatencyMs: Math.round(stats.avgLatencyMs * 100) / 100,
       version: VERSION
     }));
+  }
+
+  // Redirect /t/:tunnelId (without trailing slash) to /t/:tunnelId/
+  const noSlashMatch = req.url.match(/^\/t\/([a-zA-Z0-9_-]+)(\?.*)?$/);
+  if (noSlashMatch) {
+    const tid = noSlashMatch[1].toLowerCase();
+    const qs = noSlashMatch[2] || '';
+    res.writeHead(301, {
+      'location': `/t/${tid}/${qs}`,
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'no-cache'
+    });
+    return res.end(`Redirecting to /t/${tid}/${qs}`);
   }
 
   const resolved = resolveTunnel(req);
@@ -406,7 +444,7 @@ function handleControlConnection(ws, req, url) {
           tunnels.set(tid, route);
           session.registeredTunnels.add(tid);
 
-          const subpathUrl = `${proto}://${host}/t/${tid}`;
+          const subpathUrl = `${proto}://${host}/t/${tid}/`;
           const subdomainUrl = `${proto}://${tid}.${host.replace(/^www\./, '')}`;
 
           ackProjects.push({
@@ -448,13 +486,16 @@ function handleControlConnection(ws, req, url) {
             if (headers.location?.startsWith('/')) {
               headers.location = `/t/${pending.tunnelId}${headers.location}`;
             }
-            // Cookie path rewrite
+            // Cookie path rewrite & active tunnel persistence
+            const tunnelCookie = `switcher_tunnel=${pending.tunnelId}; Path=/; SameSite=Lax`;
             if (headers['set-cookie']) {
               if (Array.isArray(headers['set-cookie'])) {
-                headers['set-cookie'] = headers['set-cookie'].map(c => c.replace(/Path=\//gi, `Path=/t/${pending.tunnelId}/`));
+                headers['set-cookie'] = headers['set-cookie'].map(c => c.replace(/Path=\//gi, `Path=/t/${pending.tunnelId}/`)).concat(tunnelCookie);
               } else if (typeof headers['set-cookie'] === 'string') {
-                headers['set-cookie'] = headers['set-cookie'].replace(/Path=\//gi, `Path=/t/${pending.tunnelId}/`);
+                headers['set-cookie'] = [headers['set-cookie'].replace(/Path=\//gi, `Path=/t/${pending.tunnelId}/`), tunnelCookie];
               }
+            } else {
+              headers['set-cookie'] = [tunnelCookie];
             }
           }
 
