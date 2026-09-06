@@ -24,6 +24,7 @@ import {
 import { renderDashboardHtml, renderNotFoundHtml } from './dashboard.js';
 import { resolveIpGeo, getServerGeo, getHostPcGeo, getWebClientGeo, calcDistanceKm, getNextClientColor } from './geoip.js';
 import { runTracert } from './traceroute.js';
+import { getSatellitesList, getSatellitesStats } from './satellites.js';
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -379,6 +380,46 @@ const server = http.createServer({
     } catch (err) {
       res.writeHead(500, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ error: err.message }));
+    }
+  }
+
+  // Live Orbital Satellites Ephemeris API (NORAD / CelesTrak Integration)
+  if (req.url?.startsWith('/api/satellites')) {
+    try {
+      const u = new URL(req.url, `http://${host}`);
+      if (u.pathname === '/api/satellites/stats') {
+        const stats = await getSatellitesStats();
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'cache-control': 'public, max-age=300',
+          'access-control-allow-origin': '*'
+        });
+        return res.end(JSON.stringify({ success: true, stats }));
+      }
+
+      const group = u.searchParams.get('group') || 'all';
+      const search = u.searchParams.get('q') || u.searchParams.get('search') || '';
+      const limit = parseInt(u.searchParams.get('limit') || '500', 10);
+
+      const satellites = await getSatellitesList({ group, search, limit });
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'cache-control': 'public, max-age=120',
+        'access-control-allow-origin': '*'
+      });
+      return res.end(JSON.stringify({
+        success: true,
+        timestamp: Date.now(),
+        group,
+        count: satellites.length,
+        satellites
+      }));
+    } catch (err) {
+      res.writeHead(500, {
+        'content-type': 'application/json',
+        'access-control-allow-origin': '*'
+      });
+      return res.end(JSON.stringify({ success: false, error: err.message }));
     }
   }
 

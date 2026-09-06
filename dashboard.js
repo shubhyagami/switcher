@@ -23,6 +23,8 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Three.js 3D Engine -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- SGP4 Real-Time Satellite Orbital Propagation Engine -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
 
   <style>
     :root {
@@ -140,29 +142,65 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
     }
 
     .brand-logo {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: radial-gradient(circle, var(--cyan) 10%, rgba(0, 240, 255, 0.25) 50%, transparent 70%);
-      box-shadow: 0 0 20px var(--cyan-glow);
+      width: 44px;
+      height: 44px;
       position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
+      cursor: pointer;
+      filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.45));
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .brand-logo::after {
-      content: '';
-      width: 14px;
-      height: 14px;
-      border: 2px solid var(--cyan);
-      border-radius: 50%;
-      animation: pulseRings 2.5s infinite linear;
+    .brand-logo:hover {
+      transform: scale(1.14) rotate(4deg);
+      filter: drop-shadow(0 0 16px rgba(0, 240, 255, 0.85)) drop-shadow(0 0 8px rgba(255, 183, 0, 0.6));
     }
 
-    @keyframes pulseRings {
-      0% { transform: scale(0.6); opacity: 1; }
-      100% { transform: scale(1.8); opacity: 0; }
+    .satellite-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      animation: satOrbitFloat 4.2s ease-in-out infinite;
+    }
+
+    @keyframes satOrbitFloat {
+      0%, 100% {
+        transform: translateY(0px) rotate(0deg);
+      }
+      50% {
+        transform: translateY(-2.5px) rotate(2deg);
+      }
+    }
+
+    .sat-beacon {
+      animation: beaconFlash 1.4s infinite ease-in-out;
+    }
+
+    @keyframes beaconFlash {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 1; }
+    }
+
+    .sat-beacon-ring {
+      animation: beaconRipple 1.6s infinite ease-out;
+      transform-origin: 50px 11px;
+    }
+
+    @keyframes beaconRipple {
+      0% { r: 2.2px; opacity: 0.9; }
+      100% { r: 8px; opacity: 0; }
+    }
+
+    .sat-thruster-plume {
+      animation: thrusterPulse 0.9s infinite alternate ease-in-out;
+      transform-origin: 43px 66px;
+    }
+
+    @keyframes thrusterPulse {
+      0% { opacity: 0.55; transform: scale(0.92); }
+      100% { opacity: 1; transform: scale(1.18); }
     }
 
     .brand-title {
@@ -1190,6 +1228,295 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
       .hud-panel { width: 100%; height: 200px; }
       .top-bar { flex-wrap: wrap; gap: 0.5rem; }
     }
+    /* ═══════════════════════════════════════════════════════════════════
+       LIVE SATELLITES COMMAND NET MODAL & CONTROLS
+       ═══════════════════════════════════════════════════════════════════ */
+    #satellites-modal {
+      position: absolute;
+      top: 75px;
+      right: 25px;
+      width: 440px;
+      max-height: calc(100vh - 160px);
+      background: rgba(2, 6, 16, 0.96);
+      backdrop-filter: blur(24px);
+      border: 1px solid var(--cyan);
+      border-radius: 12px;
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 240, 255, 0.25);
+      display: none;
+      flex-direction: column;
+      z-index: 120;
+      overflow: hidden;
+      animation: modalSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalSlideIn {
+      from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .sat-header {
+      padding: 0.85rem 1.2rem;
+      background: rgba(0, 240, 255, 0.08);
+      border-bottom: 1px solid rgba(0, 240, 255, 0.25);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sat-title {
+      font-family: var(--font-display);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .sat-category-tabs {
+      display: flex;
+      gap: 0.35rem;
+      padding: 0.55rem 0.85rem;
+      background: rgba(0, 0, 0, 0.45);
+      border-bottom: 1px solid rgba(0, 240, 255, 0.12);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .sat-tab,
+    .sat-tab-btn {
+      background: rgba(0, 240, 255, 0.06);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-family: var(--font-display);
+      font-size: 0.58rem;
+      letter-spacing: 0.08em;
+      padding: 0.3rem 0.6rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .sat-tab:hover,
+    .sat-tab-btn:hover {
+      border-color: var(--cyan);
+      color: #fff;
+    }
+
+    .sat-tab.active,
+    .sat-tab-btn.active {
+      background: var(--cyan);
+      color: #000;
+      font-weight: 700;
+      box-shadow: 0 0 12px var(--cyan-glow);
+    }
+
+    .sat-search-bar {
+      padding: 0.5rem 0.85rem;
+      background: rgba(0, 0, 0, 0.3);
+      border-bottom: 1px solid rgba(0, 240, 255, 0.1);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .sat-search-input {
+      flex: 1;
+      background: rgba(0, 10, 24, 0.8);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 4px;
+      padding: 0.38rem 0.65rem;
+      color: #fff;
+      font-family: var(--font-code);
+      font-size: 0.72rem;
+      outline: none;
+    }
+
+    .sat-search-input:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+    }
+
+    .sat-list-scroll {
+      flex: 1;
+      overflow-y: auto;
+      max-height: 380px;
+      padding: 0.65rem 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .sat-card {
+      background: rgba(0, 240, 255, 0.04);
+      border: 1px solid rgba(0, 240, 255, 0.14);
+      border-radius: 8px;
+      padding: 0.65rem 0.8rem;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      transition: all 0.15s ease-in-out;
+    }
+
+    .sat-card:hover {
+      background: rgba(0, 240, 255, 0.1);
+      border-color: var(--cyan);
+      transform: translateX(4px);
+    }
+
+    .sat-card.active-sat {
+      background: rgba(0, 240, 255, 0.2);
+      border-color: var(--cyan);
+      box-shadow: 0 0 16px rgba(0, 240, 255, 0.35);
+    }
+
+    .sat-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .sat-name-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: var(--font-display);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sat-cat-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .sat-card-badges {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-shrink: 0;
+    }
+
+    .sat-badge-pill {
+      font-family: var(--font-code);
+      font-size: 0.58rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+
+    .sat-card-metrics {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-code);
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      background: rgba(0, 0, 0, 0.35);
+      padding: 0.3rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .sat-card-actions {
+      display: flex;
+      gap: 0.35rem;
+      margin-top: 0.15rem;
+    }
+
+    .sat-item-row {
+      background: rgba(0, 240, 255, 0.04);
+      border: 1px solid rgba(0, 240, 255, 0.14);
+      border-radius: 6px;
+      padding: 0.55rem 0.75rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.15s;
+    }
+
+    .sat-item-row:hover {
+      background: rgba(0, 240, 255, 0.14);
+      border-color: var(--cyan);
+      transform: translateX(3px);
+    }
+
+    .sat-item-row.selected {
+      background: rgba(0, 240, 255, 0.22);
+      border-color: var(--cyan);
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
+    }
+
+    .sat-telemetry-box {
+      border-top: 1px solid rgba(0, 240, 255, 0.25);
+      background: rgba(0, 8, 20, 0.95);
+      padding: 0.75rem 0.95rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .sat-hud-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+    }
+
+    .sat-hud-cell {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      border-radius: 4px;
+      padding: 0.35rem 0.5rem;
+    }
+
+    .sat-hud-lbl {
+      font-family: var(--font-display);
+      font-size: 0.52rem;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+    }
+
+    .sat-hud-val {
+      font-family: var(--font-code);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Chase Cam Floating HUD Banner */
+    #chase-cam-banner {
+      position: absolute;
+      top: 75px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(2, 6, 16, 0.92);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--gold);
+      border-radius: 8px;
+      padding: 0.45rem 1.1rem;
+      display: none;
+      align-items: center;
+      gap: 0.85rem;
+      z-index: 110;
+      box-shadow: 0 0 25px rgba(255, 183, 0, 0.35);
+      animation: pulseGlow 2s infinite;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 15px rgba(255, 183, 0, 0.3); }
+      50% { box-shadow: 0 0 28px rgba(255, 183, 0, 0.6); }
+    }
   </style>
 </head>
 <body>
@@ -1207,12 +1534,159 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
     <div class="tt-detail" id="tt-route">Port Forward: /t/demo/</div>
   </div>
 
+  <!-- Chase Camera Active Cockpit HUD Banner -->
+  <div id="chase-cam-banner" class="interactive">
+    <span class="ticker-dot" style="background:var(--gold); box-shadow:0 0 8px var(--gold);"></span>
+    <span style="font-family:var(--font-display); font-size:0.72rem; color:var(--gold); letter-spacing:0.12em;">CHASE CAM COCKPIT LOCK: <strong id="chase-cam-sat-name" style="color:#fff;">ISS (ZARYA)</strong></span>
+    <button class="cam-btn cam-btn-orange" onclick="toggleChaseCam()" style="padding:0.2rem 0.55rem; font-size:0.6rem;">EXIT COCKPIT (ESC)</button>
+  </div>
+
   <!-- Tactical HUD Layer -->
   <div class="hud-layer">
     <!-- Top Command Bar -->
     <header class="top-bar interactive">
       <div class="brand-section">
-        <div class="brand-logo"></div>
+        <div class="brand-logo" onclick="toggleSatellitesDeck()" title="Orbital Reconnaissance Satellite // Click to inspect live satellites">
+          <svg class="satellite-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="solarCellGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#001428"/>
+                <stop offset="45%" stop-color="#0052a3"/>
+                <stop offset="85%" stop-color="#0099ff"/>
+                <stop offset="100%" stop-color="#00f0ff"/>
+              </linearGradient>
+              <linearGradient id="solarFrameGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#2c3e50"/>
+                <stop offset="50%" stop-color="#78909c"/>
+                <stop offset="100%" stop-color="#cfd8dc"/>
+              </linearGradient>
+              <linearGradient id="goldTopGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#ffa000"/>
+                <stop offset="40%" stop-color="#ffd54f"/>
+                <stop offset="80%" stop-color="#fff59d"/>
+                <stop offset="100%" stop-color="#ffffff"/>
+              </linearGradient>
+              <linearGradient id="goldLeftGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ffb300"/>
+                <stop offset="50%" stop-color="#ff8f00"/>
+                <stop offset="100%" stop-color="#e65100"/>
+              </linearGradient>
+              <linearGradient id="goldRightGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#e65100"/>
+                <stop offset="60%" stop-color="#bf360c"/>
+                <stop offset="100%" stop-color="#5d1a00"/>
+              </linearGradient>
+              <radialGradient id="dishGrad" cx="45%" cy="40%" r="60%">
+                <stop offset="0%" stop-color="#ffffff"/>
+                <stop offset="40%" stop-color="#eceff1"/>
+                <stop offset="75%" stop-color="#90a4ae"/>
+                <stop offset="100%" stop-color="#37474f"/>
+              </radialGradient>
+              <radialGradient id="ionGlow" cx="50%" cy="30%" r="70%">
+                <stop offset="0%" stop-color="#00f0ff" stop-opacity="1"/>
+                <stop offset="40%" stop-color="#0088ff" stop-opacity="0.8"/>
+                <stop offset="80%" stop-color="#002266" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+              </radialGradient>
+              <filter id="thrusterFilter" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2" result="blur"/>
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+              <filter id="beaconGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="1.5" result="blur"/>
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+
+            <!-- 1. Deep Space Orbital Trajectory Arc -->
+            <path d="M 12,50 A 42,42 0 0,1 88,50" stroke="rgba(0,240,255,0.24)" stroke-width="1.2" stroke-dasharray="3,4" fill="none"/>
+            <circle cx="88" cy="50" r="1.5" fill="rgba(0,240,255,0.7)"/>
+            <circle cx="12" cy="50" r="1.5" fill="rgba(0,240,255,0.7)"/>
+
+            <!-- 2. Ion Engine Thruster Exhaust Plume -->
+            <g class="sat-thruster-plume" filter="url(#thrusterFilter)">
+              <ellipse cx="43" cy="72" rx="4.5" ry="8" transform="rotate(22 43 72)" fill="url(#ionGlow)"/>
+              <ellipse cx="43" cy="70" rx="2" ry="4" transform="rotate(22 43 70)" fill="#ffffff" opacity="0.9"/>
+            </g>
+
+            <!-- 3. Left Solar Array Wing -->
+            <line x1="36" y1="48" x2="25" y2="42" stroke="url(#solarFrameGrad)" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="36" cy="48" r="1.5" fill="#78909c"/>
+            <circle cx="25" cy="42" r="1.8" fill="#cfd8dc"/>
+
+            <polygon points="2,28 25,41.5 25,57.5 2,44" fill="#030b14" stroke="url(#solarFrameGrad)" stroke-width="1.2"/>
+            <!-- Solar Cell Modules -->
+            <polygon points="3.5,29.5 9.5,33 9.5,47 3.5,43.5" fill="url(#solarCellGrad)"/>
+            <line x1="3.5" y1="36.5" x2="9.5" y2="40" stroke="#00f0ff" stroke-width="0.5" opacity="0.75"/>
+            <polygon points="10.5,33.5 16.5,37 16.5,51 10.5,47.5" fill="url(#solarCellGrad)"/>
+            <line x1="10.5" y1="40.5" x2="16.5" y2="44" stroke="#00f0ff" stroke-width="0.5" opacity="0.75"/>
+            <polygon points="17.5,37.5 23.5,41 23.5,55 17.5,51.5" fill="url(#solarCellGrad)"/>
+            <line x1="17.5" y1="44.5" x2="23.5" y2="48" stroke="#00f0ff" stroke-width="0.5" opacity="0.75"/>
+            <line x1="3" y1="36.5" x2="24" y2="48.5" stroke="#ffffff" stroke-width="0.6" opacity="0.85"/>
+
+            <!-- 4. Right Solar Array Wing -->
+            <line x1="64" y1="50" x2="75" y2="56" stroke="url(#solarFrameGrad)" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="64" cy="50" r="1.5" fill="#78909c"/>
+            <circle cx="75" cy="56" r="1.8" fill="#cfd8dc"/>
+
+            <polygon points="75,42.5 98,55.5 98,71.5 75,58.5" fill="#030b14" stroke="url(#solarFrameGrad)" stroke-width="1.2"/>
+            <!-- Solar Cell Modules -->
+            <polygon points="76.5,44 82.5,47.5 82.5,61.5 76.5,58" fill="url(#solarCellGrad)"/>
+            <line x1="76.5" y1="51" x2="82.5" y2="54.5" stroke="#00f0ff" stroke-width="0.5" opacity="0.75"/>
+            <polygon points="83.5,48 89.5,51.5 89.5,65.5 83.5,62" fill="url(#solarCellGrad)"/>
+            <line x1="83.5" y1="55" x2="89.5" y2="58.5" stroke="#00f0ff" stroke-width="0.5" opacity="0.75"/>
+            <polygon points="90.5,52 96.5,55.5 96.5,69.5 90.5,66" fill="url(#solarCellGrad)"/>
+            <line x1="90.5" y1="59" x2="96.5" y2="62.5" stroke="#00f0ff" stroke-width="0.5" opacity="0.75"/>
+            <line x1="76" y1="51" x2="97" y2="63" stroke="#ffffff" stroke-width="0.6" opacity="0.85"/>
+
+            <!-- 5. High-Gain Parabolic Communications Dish -->
+            <g transform="translate(68, 22)">
+              <line x1="-10" y1="12" x2="0" y2="0" stroke="#90a4ae" stroke-width="1.5"/>
+              <ellipse cx="0" cy="0" rx="11" ry="6.5" transform="rotate(-30)" fill="url(#dishGrad)" stroke="#b0bec5" stroke-width="1"/>
+              <ellipse cx="0" cy="0" rx="8" ry="4.5" transform="rotate(-30)" fill="#37474f" opacity="0.45"/>
+              <line x1="-3" y1="-5" x2="2" y2="-10" stroke="#00f0ff" stroke-width="0.7"/>
+              <line x1="3" y1="5" x2="2" y2="-10" stroke="#00f0ff" stroke-width="0.7"/>
+              <circle cx="2" cy="-10" r="1.5" fill="#00f0ff"/>
+            </g>
+
+            <!-- 6. Central Satellite Bus (Isometric Cube Body) -->
+            <polygon points="41,63 46,66 43,70 38,67" fill="#263238" stroke="#455a64" stroke-width="0.8"/>
+            <polygon points="36,41 50,49 50,67 36,59" fill="url(#goldLeftGrad)" stroke="#ffd54f" stroke-width="0.8"/>
+            <polygon points="50,49 64,41 64,59 50,67" fill="url(#goldRightGrad)" stroke="#ffb300" stroke-width="0.8"/>
+            <polygon points="50,33 64,41 50,49 36,41" fill="url(#goldTopGrad)" stroke="#fff59d" stroke-width="0.8"/>
+
+            <!-- MLI Thermal Quilt Seams & Texture Grid on Top Face -->
+            <line x1="43" y1="37" x2="57" y2="45" stroke="#ffe082" stroke-width="0.5" opacity="0.7"/>
+            <line x1="57" y1="37" x2="43" y2="45" stroke="#ffe082" stroke-width="0.5" opacity="0.7"/>
+
+            <!-- Optical Payload Camera / Reconnaissance Aperture on Left Face -->
+            <circle cx="43" cy="53" r="3.6" fill="#030a16" stroke="#00f0ff" stroke-width="0.9"/>
+            <circle cx="43" cy="53" r="2.2" fill="#002b4d"/>
+            <ellipse cx="42" cy="52" rx="1.2" ry="0.7" fill="#ffffff" opacity="0.9"/>
+            <line x1="40" y1="60" x2="46" y2="63.5" stroke="#ffe082" stroke-width="0.6"/>
+            <line x1="40" y1="62" x2="46" y2="65.5" stroke="#ffe082" stroke-width="0.6"/>
+
+            <!-- Radiator Louvers on Right Face -->
+            <line x1="53" y1="52" x2="61" y2="47.5" stroke="#8d2600" stroke-width="0.8"/>
+            <line x1="53" y1="56" x2="61" y2="51.5" stroke="#8d2600" stroke-width="0.8"/>
+            <line x1="53" y1="60" x2="61" y2="55.5" stroke="#8d2600" stroke-width="0.8"/>
+
+            <!-- 7. Forward Telemetry Antenna Mast & Active Strobe Beacon -->
+            <line x1="50" y1="33" x2="50" y2="12" stroke="#00f0ff" stroke-width="1.4" stroke-linecap="round"/>
+            <line x1="46" y1="18" x2="54" y2="18" stroke="#00f0ff" stroke-width="1"/>
+            <line x1="47.5" y1="15" x2="52.5" y2="15" stroke="#00f0ff" stroke-width="0.8"/>
+
+            <!-- Pulsing Strobe Beacon LED -->
+            <circle cx="50" cy="11" r="5" fill="none" stroke="#00f0ff" stroke-width="1" class="sat-beacon-ring"/>
+            <circle cx="50" cy="11" r="2.2" fill="#ffffff" class="sat-beacon" filter="url(#beaconGlow)"/>
+          </svg>
+        </div>
         <div class="brand-title">
           <span>SWITCHER TUNNEL</span>
           <span class="brand-subtitle">GOOGLE EARTH 3D COMMAND // v${version}</span>
@@ -1255,6 +1729,10 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
       </div>
 
       <div class="top-telemetry">
+        <div class="tele-stat" style="cursor:pointer;" onclick="toggleSatellitesDeck()" title="Click to view live orbital satellites">
+          <span class="tele-label" style="color:var(--cyan);">🛰️ ORBIT SATS</span>
+          <span class="tele-val" id="hud-sat-count" style="color:var(--cyan);">--</span>
+        </div>
         <div class="tele-stat" style="cursor:pointer;" onclick="openPortsModal()" title="Click to inspect all active open ports & routes">
           <span class="tele-label" style="color:var(--green);">⚡ OPEN PORTS</span>
           <span class="tele-val" id="hud-open-ports" style="color:var(--green); font-size:0.84rem;">SCANNING...</span>
@@ -1434,10 +1912,59 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
       </div>
     </div>
 
+    <!-- Live Satellite Orbit Tracking Command Net Modal -->
+    <div id="satellites-modal" class="interactive">
+      <div class="sat-header">
+        <div class="sat-title">
+          <span class="ticker-dot" style="background:var(--cyan); box-shadow:0 0 8px var(--cyan);"></span>
+          <span>🛰️ LIVE SATELLITE ORBITS & TELEMETRY</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <span id="sat-modal-count-badge" class="hud-badge" style="border-color:var(--cyan); color:var(--cyan);">0 IN ORBIT</span>
+          <button class="close-card-btn" onclick="toggleSatellitesDeck()">✕</button>
+        </div>
+      </div>
+
+      <!-- Constellation Filter Tabs -->
+      <div class="sat-category-tabs">
+        <button class="sat-tab active" data-cat="all" onclick="setSatelliteFilter('all')">ALL ORBITS</button>
+        <button class="sat-tab" data-cat="stations" onclick="setSatelliteFilter('stations')">STATIONS (ISS/CSS)</button>
+        <button class="sat-tab" data-cat="starlink" onclick="setSatelliteFilter('starlink')">STARLINK</button>
+        <button class="sat-tab" data-cat="gps" onclick="setSatelliteFilter('gps')">GPS / NAVSTAR</button>
+        <button class="sat-tab" data-cat="weather" onclick="setSatelliteFilter('weather')">WEATHER / NOAA</button>
+        <button class="sat-tab" data-cat="science" onclick="setSatelliteFilter('science')">SCIENCE / HST</button>
+      </div>
+
+      <!-- Quick Search & Display Filters -->
+      <div class="sat-search-bar">
+        <span style="color:var(--cyan); font-size:0.8rem;">🔍</span>
+        <input type="text" id="sat-search-input" class="sat-search-input" placeholder="Search satellite name, NORAD ID, operator..." oninput="filterSatellitesList()">
+        <button id="btn-modal-sat-vis-toggle" class="sat-tab active" onclick="toggleSatellitesVisibility()" title="Hide or Unhide all 3D satellites in orbit">👁️ SATS: ON</button>
+        <button id="btn-sat-orbits-toggle" class="sat-tab active" onclick="toggleAllOrbits()" title="Toggle orbital trajectory lines in 3D">🌐 ORBITS</button>
+        <button id="btn-sat-labels-toggle" class="sat-tab" onclick="toggleSatelliteLabels()" title="Toggle billboard labels">🏷️ LABELS</button>
+      </div>
+
+      <!-- Live Satellites Scrollable List Container -->
+      <div class="sat-list-scroll" id="satellites-list-body">
+        <div style="text-align:center; padding:1.5rem; color:var(--text-muted); font-family:var(--font-code); font-size:0.75rem;">
+          Querying CelesTrak NORAD Ephemeris & Propagating SGP4 Orbits...
+        </div>
+      </div>
+    </div>
+
     <!-- Bottom Controls & Event Ticker -->
     <div class="hud-bottom">
       <!-- Camera & Map Style Controls Bar -->
       <div class="camera-controls-bar interactive">
+        <button class="cam-btn" id="btn-satellites-toggle" onclick="toggleSatellitesDeck()" style="border-color:rgba(0,240,255,0.45); color:var(--cyan);">
+          <span>🛰️</span> SATELLITES (<span id="btn-sat-count">0</span>)
+        </button>
+        <button class="cam-btn active" id="btn-sats-hide-toggle" onclick="toggleSatellitesVisibility()" style="border-color:rgba(0,240,255,0.45); color:var(--cyan);" title="Hide / Unhide all 3D satellites in orbit">
+          <span>🛰️</span> SATS: VISIBLE
+        </button>
+        <button class="cam-btn active" id="btn-orbits-toggle" onclick="toggleAllOrbits()" style="border-color:rgba(0,240,255,0.3); color:var(--text-main);">
+          <span>⭕</span> ORBITS: ON
+        </button>
         <button class="cam-btn active" id="btn-style-sat" onclick="setMapStyle('satellite')">
           <span>🛰️</span> SATELLITE HD
         </button>
@@ -1677,6 +2204,12 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
     const particlesGroup = new THREE.Group();
     globeGroup.add(particlesGroup);
 
+    const satellitesGroup = new THREE.Group();
+    globeGroup.add(satellitesGroup);
+
+    const orbitsGroup = new THREE.Group();
+    globeGroup.add(orbitsGroup);
+
     const GLOBE_RADIUS = 60;
 
     // ─── 1. Deep Space Starfield ───
@@ -1796,17 +2329,6 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
         ringMesh.position.y = y;
         gridGroup.add(ringMesh);
       }
-
-      const orbitGeo = new THREE.RingGeometry(GLOBE_RADIUS * 1.35, GLOBE_RADIUS * 1.36, 128);
-      const orbitMat = new THREE.MeshBasicMaterial({
-        color: 0x00f0ff,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.22
-      });
-      const orbitMesh = new THREE.Mesh(orbitGeo, orbitMat);
-      orbitMesh.rotation.x = Math.PI / 2.3;
-      gridGroup.add(orbitMesh);
     }
     createTacticalGrid();
 
@@ -2112,6 +2634,1146 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
     function closeTracertModal() {
       document.getElementById('tracert-modal').style.display = 'none';
       while (tracertGroup.children.length > 0) tracertGroup.remove(tracertGroup.children[0]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // LIVE SATELLITE ORBIT TRACKING ENGINE (NORAD SGP4 & 3D VISUALIZATION)
+    // ═══════════════════════════════════════════════════════════════════
+    let liveSatellites = [];
+    let selectedSatellite = null;
+    let chaseCamActive = false;
+    let showAllSatellites = true;
+    let showAllOrbits = true;
+    let showSatLabels = false;
+    let currentSatCategory = 'all';
+    let satSearchQuery = '';
+
+    // Selected satellite 3D accessories
+    let satDetailedMesh = null;
+    let activeOrbitLine = null;
+    let activeGroundLaser = null;
+    let activeFootprintRing = null;
+    let lastSatPropTime = 0;
+    let satStrobeTime = 0;
+
+    const SAT_COLORS = {
+      stations: '#ffd600', // Gold
+      starlink: '#00f0ff', // Cyan
+      gps: '#00e676',      // Neon Emerald
+      weather: '#b388ff',  // Purple / Violet
+      science: '#ff6d00',  // Solar Orange
+      visual: '#00f0ff',
+      all: '#00f0ff'
+    };
+
+    /**
+     * Compute scaled 3D globe radius from real-world altitude in kilometers.
+     * Prevents clipping into Earth/atmosphere while giving distinct LEO, MEO, and GEO layers.
+     */
+    function calculateSatelliteAltitudeRadius(altKm) {
+      if (isNaN(altKm) || altKm < 100) altKm = 400;
+      if (altKm <= 2000) {
+        // LEO: 300km - 2,000km -> r: 63.8 to 74.0
+        return GLOBE_RADIUS + 3.8 + (altKm / 2000) * 10.2;
+      } else if (altKm <= 22000) {
+        // MEO (GPS): 2,000km - 22,000km -> r: 74.0 to 100.0
+        return GLOBE_RADIUS + 14.0 + ((altKm - 2000) / 20000) * 26.0;
+      } else {
+        // GEO: ~35,786km -> r: 100.0 to 125.0
+        return GLOBE_RADIUS + 40.0 + (Math.min(altKm - 22000, 20000) / 20000) * 25.0;
+      }
+    }
+
+    /**
+     * Propagate satellite position and velocity vector at a specific UTC timestamp using SGP4.
+     */
+    function getSatelliteCoordinates(satrec, date = new Date()) {
+      if (!satrec || typeof satellite === 'undefined' || !satellite.propagate) return null;
+      try {
+        const pv = satellite.propagate(satrec, date);
+        if (!pv || !pv.position || isNaN(pv.position.x)) return null;
+
+        const gmst = satellite.gstime(date);
+        const gd = satellite.eciToGeodetic(pv.position, gmst);
+        const lat = satellite.degreesLat(gd.latitude);
+        const lon = satellite.degreesLong(gd.longitude);
+        const alt = Math.max(100, gd.height); // in km
+
+        let vel = 7.66;
+        if (pv.velocity && !isNaN(pv.velocity.x)) {
+          vel = Math.sqrt(pv.velocity.x * pv.velocity.x + pv.velocity.y * pv.velocity.y + pv.velocity.z * pv.velocity.z);
+        }
+
+        return { lat, lon, alt, vel };
+      } catch (err) {
+        return null;
+      }
+    }
+
+    /**
+     * Compute instantaneous 3D Vector3 inside globeGroup for given lat, lon, alt.
+     */
+    function calculateSatellite3DPosition(lat, lon, alt) {
+      const r = calculateSatelliteAltitudeRadius(alt);
+      return latLonToVector3(lat, lon, r);
+    }
+
+    // ─── Shared Realistic 3D Satellite Materials ───
+    const SAT_MATERIALS = {
+      busGold: new THREE.MeshStandardMaterial({ color: 0xdf9f1a, metalness: 0.85, roughness: 0.25, emissive: 0x221400 }),
+      busWhite: new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.45, roughness: 0.35 }),
+      busSilver: new THREE.MeshStandardMaterial({ color: 0xb0bec5, metalness: 0.88, roughness: 0.2 }),
+      busDark: new THREE.MeshStandardMaterial({ color: 0x242830, metalness: 0.75, roughness: 0.45 }),
+      solarBlue: new THREE.MeshStandardMaterial({ color: 0x0c3b88, metalness: 0.92, roughness: 0.18, emissive: 0x00163a }),
+      solarGold: new THREE.MeshStandardMaterial({ color: 0xc68a12, metalness: 0.88, roughness: 0.22, emissive: 0x1f1200 }),
+      truss: new THREE.MeshStandardMaterial({ color: 0x8899a6, metalness: 0.65, roughness: 0.4 }),
+      dish: new THREE.MeshStandardMaterial({ color: 0xdde2e6, metalness: 0.7, roughness: 0.3, side: THREE.DoubleSide }),
+      radiator: new THREE.MeshStandardMaterial({ color: 0xf5f5f5, metalness: 0.3, roughness: 0.6 }),
+      ionGlow: new THREE.MeshBasicMaterial({ color: 0x00f0ff }),
+      strobeRed: new THREE.MeshBasicMaterial({ color: 0xff1744 }),
+      strobeGreen: new THREE.MeshBasicMaterial({ color: 0x00e676 }),
+      strobeCyan: new THREE.MeshBasicMaterial({ color: 0x00f0ff }),
+      lensDark: new THREE.MeshStandardMaterial({ color: 0x050d18, metalness: 0.95, roughness: 0.1 }),
+      cupolaWindow: new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.85 }),
+      hitSphere: new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    };
+
+    /**
+     * Builds authentic 3D model for Space Stations (ISS / Tiangong)
+     * Features pressurized module spine, integrated truss structure, 8 massive solar wings, radiators, and cupola.
+     */
+    function buildStationArchitecture(mGroup, sat) {
+      // 1. Central Pressurized Module Spine
+      const spineGeo = new THREE.CylinderGeometry(0.55, 0.55, 3.4, 16);
+      const spineMesh = new THREE.Mesh(spineGeo, SAT_MATERIALS.busWhite);
+      spineMesh.rotation.x = Math.PI / 2;
+      mGroup.add(spineMesh);
+
+      // Transverse Node Module
+      const nodeGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8, 16);
+      const nodeMesh = new THREE.Mesh(nodeGeo, SAT_MATERIALS.busSilver);
+      nodeMesh.rotation.z = Math.PI / 2;
+      mGroup.add(nodeMesh);
+
+      // Docked Transport Capsule (Soyuz / Dragon)
+      const capNose = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.75, 12), SAT_MATERIALS.busWhite);
+      capNose.position.set(0, 0, -2.1);
+      capNose.rotation.x = -Math.PI / 2;
+      mGroup.add(capNose);
+
+      const capBody = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.55, 12), SAT_MATERIALS.busDark);
+      capBody.position.set(0, 0, -1.65);
+      capBody.rotation.x = -Math.PI / 2;
+      mGroup.add(capBody);
+
+      // Earth-facing Cupola Observation Dome (pointing towards Earth along +Z)
+      const cupolaMesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), SAT_MATERIALS.cupolaWindow);
+      cupolaMesh.position.set(0, 0, 0.55);
+      mGroup.add(cupolaMesh);
+
+      // 2. Integrated Truss Structure (ITS Cross-Beam)
+      const trussGeo = new THREE.CylinderGeometry(0.12, 0.12, 11.4, 8);
+      const trussMesh = new THREE.Mesh(trussGeo, SAT_MATERIALS.truss);
+      trussMesh.rotation.z = Math.PI / 2;
+      mGroup.add(trussMesh);
+
+      // 3. Eight Massive Dual Solar Array Wings (4 Port, 4 Starboard)
+      const wingGeo = new THREE.BoxGeometry(2.3, 0.04, 1.1);
+      [-5.6, -4.3, 4.3, 5.6].forEach(x => {
+        const wingFwd = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarGold);
+        wingFwd.position.set(x, 0, 1.2);
+        mGroup.add(wingFwd);
+
+        const wingAft = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarBlue);
+        wingAft.position.set(x, 0, -1.2);
+        mGroup.add(wingAft);
+      });
+
+      // 4. Heat Rejection Radiators (White Thermal Vanes)
+      const radGeo = new THREE.BoxGeometry(1.4, 0.04, 0.85);
+      [-1.4, 0, 1.4].forEach(x => {
+        const rad = new THREE.Mesh(radGeo, SAT_MATERIALS.radiator);
+        rad.position.set(x, 0.75, 0);
+        rad.rotation.z = Math.PI / 2;
+        mGroup.add(rad);
+      });
+
+      // 5. Communications Dish
+      const dishMesh = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35), SAT_MATERIALS.dish);
+      dishMesh.position.set(0, 0.8, 1.0);
+      dishMesh.rotation.x = Math.PI;
+      mGroup.add(dishMesh);
+
+      // 6. Navigation Strobes
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), SAT_MATERIALS.strobeCyan);
+      beacon.position.set(0, 1.1, 0);
+      mGroup.add(beacon);
+      mGroup.userData.beaconMesh = beacon;
+
+      mGroup.scale.set(0.72, 0.72, 0.72);
+    }
+
+    /**
+     * Builds authentic 3D model for SpaceX Starlink Satellites
+     * Features low-profile flat-panel chassis, white phased-array bottom, single deployable solar array wing, and glowing ion thruster.
+     */
+    function buildStarlinkArchitecture(mGroup, sat) {
+      // 1. Flat-Panel Chassis Bus
+      const busMesh = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.22, 2.5), SAT_MATERIALS.busDark);
+      mGroup.add(busMesh);
+
+      // Earth-facing Phased Array Antenna Plate (Nadir +Z)
+      const phaseMesh = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.04, 2.4), SAT_MATERIALS.busWhite);
+      phaseMesh.position.set(0, 0, 0.12);
+      mGroup.add(phaseMesh);
+
+      // 2. Single Continuous Deployable Solar Array Wing (iconic single-wing Starlink design)
+      const wingMesh = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.04, 1.35), SAT_MATERIALS.solarBlue);
+      wingMesh.position.set(-2.8, 0, 0);
+      mGroup.add(wingMesh);
+
+      // Wing Hinge Yoke
+      const yokeMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.5, 8), SAT_MATERIALS.busSilver);
+      yokeMesh.position.set(-0.85, 0, 0);
+      yokeMesh.rotation.z = Math.PI / 2;
+      mGroup.add(yokeMesh);
+
+      // 3. Krypton / Argon Ion Propulsion Thruster
+      const thrustBlock = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.35), SAT_MATERIALS.busDark);
+      thrustBlock.position.set(0, -1.32, 0);
+      mGroup.add(thrustBlock);
+
+      const ionNozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 0.25, 12), SAT_MATERIALS.ionGlow);
+      ionNozzle.position.set(0, -1.48, 0);
+      ionNozzle.rotation.x = Math.PI / 2;
+      mGroup.add(ionNozzle);
+
+      // 4. Intersatellite Optical Laser Terminals (ISL)
+      const laserTerm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.16, 8), SAT_MATERIALS.busSilver);
+      laserTerm.position.set(0, 1.28, 0);
+      mGroup.add(laserTerm);
+
+      // Strobe beacon
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), SAT_MATERIALS.strobeCyan);
+      beacon.position.set(0, 0, -0.2);
+      mGroup.add(beacon);
+      mGroup.userData.beaconMesh = beacon;
+
+      mGroup.scale.set(0.68, 0.68, 0.68);
+    }
+
+    /**
+     * Builds authentic 3D model for GPS / Navstar / Navigation Satellites
+     * Features golden MLI bus, dual articulated solar array wings, and signature Earth-facing helical navigation antenna cluster.
+     */
+    function buildGpsArchitecture(mGroup, sat) {
+      // 1. Golden MLI-wrapped Satellite Bus
+      const busMesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.8), SAT_MATERIALS.busGold);
+      mGroup.add(busMesh);
+
+      // Thermal Radiator Panels on bus sides
+      [-0.82, 0.82].forEach(x => {
+        const rad = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.4, 1.4), SAT_MATERIALS.busSilver);
+        rad.position.set(x, 0, 0);
+        mGroup.add(rad);
+      });
+
+      // 2. Dual Articulated Solar Array Wings
+      const wingGeo = new THREE.BoxGeometry(3.6, 0.06, 1.25);
+      const leftWing = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarBlue);
+      leftWing.position.set(-2.7, 0, 0);
+      mGroup.add(leftWing);
+
+      const rightWing = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarBlue);
+      rightWing.position.set(2.7, 0, 0);
+      mGroup.add(rightWing);
+
+      // Truss Booms
+      const boomGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.8, 8);
+      [-1.1, 1.1].forEach(x => {
+        const boom = new THREE.Mesh(boomGeo, SAT_MATERIALS.truss);
+        boom.position.set(x, 0, 0);
+        boom.rotation.z = Math.PI / 2;
+        mGroup.add(boom);
+      });
+
+      // 3. Signature Earth-Facing L-Band Helical Navigation Antenna Array Cluster
+      const deckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.1, 16), SAT_MATERIALS.busSilver);
+      deckMesh.position.set(0, 0, 0.95);
+      deckMesh.rotation.x = Math.PI / 2;
+      mGroup.add(deckMesh);
+
+      // Conical Helical Antennas pointing towards Earth (+Z)
+      const hornGeo = new THREE.ConeGeometry(0.14, 0.52, 8);
+      const centerHorn = new THREE.Mesh(hornGeo, SAT_MATERIALS.busGold);
+      centerHorn.position.set(0, 0, 1.24);
+      centerHorn.rotation.x = Math.PI / 2;
+      mGroup.add(centerHorn);
+
+      [[-0.34, -0.34], [-0.34, 0.34], [0.34, -0.34], [0.34, 0.34]].forEach(([hx, hy]) => {
+        const horn = new THREE.Mesh(hornGeo, SAT_MATERIALS.busGold);
+        horn.position.set(hx, hy, 1.2);
+        horn.rotation.x = Math.PI / 2;
+        mGroup.add(horn);
+      });
+
+      // 4. Apogee Kick Engine Nozzle (Zenith -Z)
+      const rocketNozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.38, 0.45, 12), SAT_MATERIALS.busDark);
+      rocketNozzle.position.set(0, 0, -1.05);
+      rocketNozzle.rotation.x = -Math.PI / 2;
+      mGroup.add(rocketNozzle);
+
+      // Strobe beacon
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), SAT_MATERIALS.strobeGreen);
+      beacon.position.set(0, 0.9, 0);
+      mGroup.add(beacon);
+      mGroup.userData.beaconMesh = beacon;
+
+      mGroup.scale.set(0.7, 0.7, 0.7);
+    }
+
+    /**
+     * Builds authentic 3D model for Weather & Earth Observation Satellites (GOES / NOAA / Meteosat)
+     * Features asymmetric bus, Earth-facing scanning radiometer drum, single giant solar wing, and counterbalance boom.
+     */
+    function buildWeatherArchitecture(mGroup, sat) {
+      // 1. Asymmetric Equipment Bus
+      const busMesh = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.5, 2.0), SAT_MATERIALS.busGold);
+      mGroup.add(busMesh);
+
+      // 2. Earth-Viewing Scanning Radiometer / Sounder Drum (+Z)
+      const drumMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.7, 16), SAT_MATERIALS.busSilver);
+      drumMesh.position.set(0, 0, 1.15);
+      drumMesh.rotation.x = Math.PI / 2;
+      mGroup.add(drumMesh);
+
+      const lensMesh = new THREE.Mesh(new THREE.CircleGeometry(0.52, 16), SAT_MATERIALS.lensDark);
+      lensMesh.position.set(0, 0, 1.51);
+      mGroup.add(lensMesh);
+
+      // 3. Asymmetric Single Giant Solar Array Wing (Starboard +X)
+      const wingMesh = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.06, 1.45), SAT_MATERIALS.solarBlue);
+      wingMesh.position.set(2.8, 0, 0);
+      mGroup.add(wingMesh);
+
+      // 4. Solar Radiation Pressure Counterbalance Boom (Port -X)
+      const mastMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 3.4, 8), SAT_MATERIALS.truss);
+      mastMesh.position.set(-2.1, 0, 0);
+      mastMesh.rotation.z = Math.PI / 2;
+      mGroup.add(mastMesh);
+
+      const sailTip = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 8), SAT_MATERIALS.busGold);
+      sailTip.position.set(-3.9, 0, 0);
+      sailTip.rotation.z = Math.PI / 2;
+      mGroup.add(sailTip);
+
+      // 5. High-Gain Weather Telemetry Downlink Dish
+      const dishMesh = new THREE.Mesh(new THREE.SphereGeometry(0.68, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.38), SAT_MATERIALS.dish);
+      dishMesh.position.set(0, 0.9, 0.6);
+      dishMesh.rotation.x = Math.PI;
+      mGroup.add(dishMesh);
+
+      // Strobe beacon
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), SAT_MATERIALS.strobeCyan);
+      beacon.position.set(0, 0.9, -0.7);
+      mGroup.add(beacon);
+      mGroup.userData.beaconMesh = beacon;
+
+      mGroup.scale.set(0.7, 0.7, 0.7);
+    }
+
+    /**
+     * Builds authentic 3D model for Science & Space Telescopes (Hubble HST / Kepler / Fermi)
+     * Features optical telescope assembly tube, open sunshield aperture hood, gold aft module, and dual solar wings.
+     */
+    function buildScienceArchitecture(mGroup, sat) {
+      // 1. Forward Optical Telescope Barrel Tube
+      const barrelMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 3.2, 20), SAT_MATERIALS.busSilver);
+      barrelMesh.position.set(0, 0, -0.6);
+      barrelMesh.rotation.x = Math.PI / 2;
+      mGroup.add(barrelMesh);
+
+      // Open Aperture Sunshade Door (Angled Open at deep-space end)
+      const doorMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.6, 16, 1, true, 0, Math.PI), SAT_MATERIALS.busSilver);
+      doorMesh.position.set(0, 0.3, -2.2);
+      doorMesh.rotation.x = Math.PI / 2 + 0.35;
+      mGroup.add(doorMesh);
+
+      // Dark Interior Optical Baffle
+      const baffleMesh = new THREE.Mesh(new THREE.CircleGeometry(0.72, 16), SAT_MATERIALS.lensDark);
+      baffleMesh.position.set(0, 0, -2.18);
+      mGroup.add(baffleMesh);
+
+      // 2. Gold-Foil Aft Equipment Section (Service Systems & Electronics)
+      const aftMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.4, 12), SAT_MATERIALS.busGold);
+      aftMesh.position.set(0, 0, 1.2);
+      aftMesh.rotation.x = Math.PI / 2;
+      mGroup.add(aftMesh);
+
+      // 3. Dual Bi-Stem Flexible Solar Array Wings
+      const wingGeo = new THREE.BoxGeometry(3.2, 0.05, 1.1);
+      const leftWing = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarGold);
+      leftWing.position.set(-2.5, 0, 0.3);
+      mGroup.add(leftWing);
+
+      const rightWing = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarGold);
+      rightWing.position.set(2.5, 0, 0.3);
+      mGroup.add(rightWing);
+
+      // 4. Steerable High-Gain Communication Dishes
+      [-0.9, 0.9].forEach(x => {
+        const dish = new THREE.Mesh(new THREE.SphereGeometry(0.48, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35), SAT_MATERIALS.dish);
+        dish.position.set(x, 0.7, 1.1);
+        dish.rotation.x = Math.PI;
+        mGroup.add(dish);
+      });
+
+      // Strobe beacon
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), SAT_MATERIALS.strobeCyan);
+      beacon.position.set(0, 1.0, 1.2);
+      mGroup.add(beacon);
+      mGroup.userData.beaconMesh = beacon;
+
+      mGroup.scale.set(0.72, 0.72, 0.72);
+    }
+
+    /**
+     * Builds authentic 3D model for Communications & Bright Visual Satellites (Iridium / O3b / Intelsat)
+     * Features golden bus, dual multi-panel solar wings, and twin parabolic dishes.
+     */
+    function buildVisualArchitecture(mGroup, sat) {
+      // 1. Spacecraft Bus (Gold Foil)
+      const busMesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.5, 1.8), SAT_MATERIALS.busGold);
+      mGroup.add(busMesh);
+
+      // 2. Dual Multi-Panel Solar Wings
+      const wingGeo = new THREE.BoxGeometry(3.6, 0.06, 1.2);
+      const leftWing = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarBlue);
+      leftWing.position.set(-2.7, 0, 0);
+      mGroup.add(leftWing);
+
+      const rightWing = new THREE.Mesh(wingGeo, SAT_MATERIALS.solarBlue);
+      rightWing.position.set(2.7, 0, 0);
+      mGroup.add(rightWing);
+
+      // Booms
+      const boomGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.8, 8);
+      [-1.1, 1.1].forEach(x => {
+        const boom = new THREE.Mesh(boomGeo, SAT_MATERIALS.truss);
+        boom.position.set(x, 0, 0);
+        boom.rotation.z = Math.PI / 2;
+        mGroup.add(boom);
+      });
+
+      // 3. Twin Parabolic Telecommunications Dishes
+      const dishGeo = new THREE.SphereGeometry(0.62, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35);
+      const dishLeft = new THREE.Mesh(dishGeo, SAT_MATERIALS.dish);
+      dishLeft.position.set(-0.45, 0.82, 0.6);
+      dishLeft.rotation.x = Math.PI;
+      mGroup.add(dishLeft);
+
+      const dishRight = new THREE.Mesh(dishGeo, SAT_MATERIALS.dish);
+      dishRight.position.set(0.45, 0.82, 0.6);
+      dishRight.rotation.x = Math.PI;
+      mGroup.add(dishRight);
+
+      // Strobe beacon
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), SAT_MATERIALS.strobeCyan);
+      beacon.position.set(0, 0.95, -0.6);
+      mGroup.add(beacon);
+      mGroup.userData.beaconMesh = beacon;
+
+      mGroup.scale.set(0.68, 0.68, 0.68);
+    }
+
+    /**
+     * Procedural Dispatcher: attaches category-specific 3D satellite architecture to a group.
+     */
+    function createSatelliteArchitectureModel(group, sat) {
+      const cat = sat.category || 'visual';
+      if (cat === 'stations') {
+        buildStationArchitecture(group, sat);
+      } else if (cat === 'starlink') {
+        buildStarlinkArchitecture(group, sat);
+      } else if (cat === 'gps') {
+        buildGpsArchitecture(group, sat);
+      } else if (cat === 'weather') {
+        buildWeatherArchitecture(group, sat);
+      } else if (cat === 'science') {
+        buildScienceArchitecture(group, sat);
+      } else {
+        buildVisualArchitecture(group, sat);
+      }
+    }
+
+    /**
+     * Holographic 3D Targeting Reticle for the Selected Satellite.
+     */
+    function createSatelliteTargetReticle(category = 'stations') {
+      const group = new THREE.Group();
+      const colHex = SAT_COLORS[category] || '#00f0ff';
+      const col = new THREE.Color(colHex);
+
+      // Outer wireframe octagonal reticle ring
+      const outerGeo = new THREE.RingGeometry(3.1, 3.25, 8);
+      const outerMat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+      const outerMesh = new THREE.Mesh(outerGeo, outerMat);
+      group.add(outerMesh);
+
+      // Inner high-precision targeting dashed ring
+      const innerGeo = new THREE.RingGeometry(2.3, 2.42, 32);
+      const innerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+      const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+      group.add(innerMesh);
+
+      // Four corner HUD bracket ticks
+      const bracketGeo = new THREE.BoxGeometry(0.12, 0.7, 0.02);
+      const bracketMat = new THREE.MeshBasicMaterial({ color: col });
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 2) {
+        const tick = new THREE.Mesh(bracketGeo, bracketMat);
+        tick.position.set(Math.cos(angle) * 3.6, Math.sin(angle) * 3.6, 0);
+        tick.rotation.z = angle;
+        group.add(tick);
+      }
+
+      group.userData = { outerMesh, innerMesh };
+      return group;
+    }
+
+    /**
+     * Backwards-compatible alias for detailed mesh / targeting reticle.
+     */
+    function createDetailedSatelliteMesh(category = 'stations') {
+      return createSatelliteTargetReticle(category);
+    }
+
+    /**
+     * Creates an authentic 3D satellite spacecraft node in orbit around the globe.
+     */
+    function createSatelliteMarkerMesh(sat) {
+      const group = new THREE.Group();
+
+      // 1. Build authentic 3D satellite architecture model for its constellation/category
+      createSatelliteArchitectureModel(group, sat);
+
+      // 2. Invisible hit sphere for effortless raycasting click & hover detection
+      const hitGeo = new THREE.SphereGeometry(2.5, 8, 8);
+      const hitMesh = new THREE.Mesh(hitGeo, SAT_MATERIALS.hitSphere);
+      group.add(hitMesh);
+
+      // 3. Billboard Text Label (if toggled)
+      const colorHex = SAT_COLORS[sat.category] || SAT_COLORS.visual;
+      const labelSprite = makeTextSprite(sat.name, colorHex);
+      labelSprite.position.set(0, 3.2, 0);
+      labelSprite.scale.set(11, 2.5, 1);
+      labelSprite.visible = showSatLabels;
+      group.add(labelSprite);
+      group.userData.labelSprite = labelSprite;
+
+      // 4. Attach data pointer for raycaster
+      group.userData.satData = sat;
+      sat.markerGroup = group;
+
+      return group;
+    }
+
+    /**
+     * Traces the full 3D orbital trajectory path of a satellite over one revolution period.
+     */
+    function createOrbitTrajectoryLine(satrec, periodMin = 95, colorHex = '#00f0ff', opacity = 0.28, numSteps = 72) {
+      if (!satrec || typeof satellite === 'undefined') return null;
+      const points = [];
+      const now = new Date();
+      const halfPeriodMs = (periodMin * 60 * 1000) / 2;
+      const stepMs = (periodMin * 60 * 1000) / numSteps;
+
+      for (let i = 0; i <= numSteps; i++) {
+        const sampleTime = new Date(now.getTime() - halfPeriodMs + i * stepMs);
+        const coords = getSatelliteCoordinates(satrec, sampleTime);
+        if (coords) {
+          points.push(calculateSatellite3DPosition(coords.lat, coords.lon, coords.alt));
+        }
+      }
+
+      if (points.length < 4) return null;
+
+      const geo = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({
+        color: new THREE.Color(colorHex),
+        transparent: true,
+        opacity: opacity,
+        linewidth: 1
+      });
+      return new THREE.Line(geo, mat);
+    }
+
+    /**
+     * Initializes and fetches live satellites from the Switcher Relay backend API.
+     */
+    async function loadLiveSatellites(group = 'all', forceRefresh = false) {
+      currentSatCategory = group;
+      const modalBadge = document.getElementById('sat-modal-count-badge');
+      const btnCount = document.getElementById('btn-sat-count');
+      const hudSatCount = document.getElementById('hud-sat-count');
+
+      if (modalBadge) modalBadge.innerText = 'FETCHING CELESTRAK...';
+
+      try {
+        const url = \`/api/satellites?group=\${encodeURIComponent(group)}\${forceRefresh ? '&refresh=1' : ''}\`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+        const data = await res.json();
+
+        if (data.satellites && Array.isArray(data.satellites)) {
+          buildSatellitesScene(data.satellites);
+          addTickerEvent(\`[SATELLITE] CELESTRAK EPHEMERIS LOADED: \${data.satellites.length} ORBITING OBJECTS\`);
+        }
+      } catch (err) {
+        console.warn('[SATELLITE] Error loading live satellites:', err);
+        if (modalBadge) modalBadge.innerText = 'OFFLINE CATALOG';
+        // Fallback local initial load
+        if (liveSatellites.length === 0) {
+          fetchFallbackSatellites();
+        }
+      }
+    }
+
+    /**
+     * Fallback loader if network fetch fails.
+     */
+    function fetchFallbackSatellites() {
+      const fallbackList = [
+        { name: "ISS (ZARYA)", id: "25544", line1: "1 25544U 98067A   26249.49984954  .00015694  00000+0  28373-3 0  9990", line2: "2 25544  51.6416 117.8423 0006248  91.3644 268.8718 15.49842475583627", category: "stations", operator: "NASA / Roscosmos", orbitType: "LEO" },
+        { name: "CSS (TIANGONG)", id: "48274", line1: "1 48274U 21035A   26249.52847222  .00018500  00000+0  21000-3 0  9998", line2: "2 48274  41.4720 180.2500 0005500 120.4500 240.1200 15.62000000210005", category: "stations", operator: "CNSA (China)", orbitType: "LEO" },
+        { name: "HST (HUBBLE)", id: "20580", line1: "1 20580U 90037B   26249.20000000  .00001500  00000+0  50000-4 0  9991", line2: "2 20580  28.4690 150.1200 0002800 250.0000 110.0000 15.08000000180002", category: "science", operator: "NASA / ESA", orbitType: "LEO" },
+        { name: "GPS BIIF-1 (PRN 25)", id: "36585", line1: "1 36585U 10022A   26249.10000000  .00000000  00000+0  00000+0 0  9998", line2: "2 36585  55.2000  32.0000 0021000  65.0000 295.0000  2.00560000110007", category: "gps", operator: "US Space Force", orbitType: "MEO" },
+        { name: "STARLINK-31652", id: "58921", line1: "1 58921U 24021A   26249.48000000  .00003000  00000+0  18000-3 0  9990", line2: "2 58921  43.0000 210.0000 0001800 115.0000 245.0000 15.12000000090007", category: "starlink", operator: "SpaceX", orbitType: "LEO" }
+      ];
+      buildSatellitesScene(fallbackList);
+    }
+
+    /**
+     * Builds Three.js 3D markers and orbital lines for all loaded satellites.
+     */
+    function buildSatellitesScene(satList) {
+      // Clear previous 3D satellite objects
+      while (satellitesGroup.children.length > 0) satellitesGroup.remove(satellitesGroup.children[0]);
+      while (orbitsGroup.children.length > 0) orbitsGroup.remove(orbitsGroup.children[0]);
+
+      liveSatellites = [];
+      const now = new Date();
+
+      for (const s of satList) {
+        if (!s.line1 || !s.line2) continue;
+
+        let satrec = null;
+        if (typeof satellite !== 'undefined' && satellite.twoline2satrec) {
+          try {
+            satrec = satellite.twoline2satrec(s.line1, s.line2);
+          } catch (e) {}
+        }
+
+        // Calculate period in minutes from mean motion (revs/day in line 2 chars 52-63)
+        let periodMin = 95;
+        let incDeg = 51.6;
+        try {
+          const mm = parseFloat(s.line2.slice(52, 63));
+          if (!isNaN(mm) && mm > 0) periodMin = 1440 / mm;
+          const inc = parseFloat(s.line2.slice(8, 16));
+          if (!isNaN(inc)) incDeg = inc;
+        } catch (e) {}
+
+        const satObj = {
+          id: s.id,
+          name: s.name,
+          line1: s.line1,
+          line2: s.line2,
+          category: s.category || 'visual',
+          operator: s.operator || 'International',
+          orbitType: s.orbitType || (periodMin > 700 ? 'GEO' : (periodMin > 200 ? 'MEO' : 'LEO')),
+          satrec: satrec,
+          period: periodMin,
+          inclination: incDeg,
+          coords: null,
+          markerGroup: null,
+          orbitLineMesh: null
+        };
+
+        // Initial coordinates
+        const coords = getSatelliteCoordinates(satrec, now);
+        if (coords) {
+          satObj.coords = coords;
+          const marker = createSatelliteMarkerMesh(satObj);
+          const pos = calculateSatellite3DPosition(coords.lat, coords.lon, coords.alt);
+          marker.position.copy(pos);
+          marker.lookAt(0, 0, 0);
+          satellitesGroup.add(marker);
+
+          // Add faint background orbit line for key / station / visual satellites
+          if (showAllOrbits && (satObj.category === 'stations' || satObj.category === 'gps' || liveSatellites.length < 50)) {
+            const orbitLine = createOrbitTrajectoryLine(satrec, periodMin, SAT_COLORS[satObj.category], 0.16);
+            if (orbitLine) {
+              orbitsGroup.add(orbitLine);
+              satObj.orbitLineMesh = orbitLine;
+            }
+          }
+
+          liveSatellites.push(satObj);
+        }
+      }
+
+      // Update counters
+      const countStr = liveSatellites.length.toString();
+      const modalBadge = document.getElementById('sat-modal-count-badge');
+      const btnCount = document.getElementById('btn-sat-count');
+      const hudSatCount = document.getElementById('hud-sat-count');
+
+      if (modalBadge) modalBadge.innerText = countStr + ' IN ORBIT';
+      if (btnCount) btnCount.innerText = countStr;
+      if (hudSatCount) hudSatCount.innerText = countStr + ' LIVE';
+
+      renderSatellitesListHtml();
+    }
+
+    /**
+     * Renders the satellite cards list inside the #satellites-list-body container.
+     */
+    function renderSatellitesListHtml() {
+      const container = document.getElementById('satellites-list-body');
+      if (!container) return;
+
+      const q = satSearchQuery.trim().toUpperCase();
+      const filtered = liveSatellites.filter(s => {
+        const matchesCat = (currentSatCategory === 'all' || s.category === currentSatCategory);
+        const matchesQuery = !q || s.name.toUpperCase().includes(q) || s.id.includes(q) || s.operator.toUpperCase().includes(q);
+        return matchesCat && matchesQuery;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = \`
+          <div style="text-align:center; padding:2rem; color:var(--text-muted); font-family:var(--font-code);">
+            No satellites found matching "\${satSearchQuery}".
+          </div>
+        \`;
+        return;
+      }
+
+      let html = '';
+      for (const s of filtered) {
+        const col = SAT_COLORS[s.category] || '#00f0ff';
+        const isSelected = selectedSatellite?.id === s.id;
+        const altStr = s.coords ? \`\${s.coords.alt.toFixed(0)} km\` : '--';
+        const velStr = s.coords ? \`\${s.coords.vel.toFixed(2)} km/s\` : '7.66 km/s';
+
+        html += \`
+          <div class="sat-card \${isSelected ? 'active-sat' : ''}" onclick="selectSatelliteById('\${s.id}')">
+            <div class="sat-card-header">
+              <div class="sat-name-wrap" style="color:\${isSelected ? '#ffffff' : col};">
+                <span class="sat-cat-dot" style="background:\${col}; box-shadow:0 0 8px \${col};"></span>
+                <span>\${s.name}</span>
+              </div>
+              <div class="sat-card-badges">
+                <span class="sat-badge-pill" style="border:1px solid \${col}; color:\${col};">#\${s.id}</span>
+                <span class="sat-badge-pill">\${s.orbitType}</span>
+              </div>
+            </div>
+            <div class="sat-card-metrics">
+              <span>ALT: <strong style="color:#ffffff;">\${altStr}</strong></span>
+              <span>VEL: <strong style="color:var(--gold);">\${velStr}</strong></span>
+              <span>INC: <strong>\${s.inclination.toFixed(1)}°</strong></span>
+            </div>
+            <div class="sat-card-actions" onclick="event.stopPropagation();">
+              <button class="btn-action" onclick="selectSatelliteById('\${s.id}')" style="padding:0.22rem 0.5rem; font-size:0.62rem;">🎯 FOCUS</button>
+              <button class="btn-action" onclick="selectSatelliteById('\${s.id}'); toggleChaseCam(true);" style="padding:0.22rem 0.5rem; font-size:0.62rem; border-color:var(--magenta); color:var(--magenta);">🚀 CHASE</button>
+              <a href="https://earth.google.com/web/@\${s.coords?.lat || 0},\${s.coords?.lon || 0},5000a,35y,0h,45t,0r" target="_blank" class="btn-action" style="padding:0.22rem 0.5rem; font-size:0.62rem; border-color:var(--gold); color:var(--gold);">🌍 GOOGLE EARTH</a>
+            </div>
+          </div>
+        \`;
+      }
+
+      container.innerHTML = html;
+    }
+
+    /**
+     * Selects and focuses a satellite by NORAD ID.
+     */
+    function selectSatelliteById(id) {
+      const sat = liveSatellites.find(s => s.id === id);
+      if (sat) selectSatellite(sat);
+    }
+
+    /**
+     * Selects, highlights, and inspects a satellite object.
+     */
+    function selectSatellite(sat) {
+      if (!sat) return;
+      if (!showAllSatellites) toggleSatellitesVisibility(true);
+      selectedSatellite = sat;
+      selectedNode = null; // Unfocus network node
+
+      playSelectSound();
+      addTickerEvent(\`[ORBIT_LOCK] TARGET ACQUIRED: \${sat.name} // NORAD: #\${sat.id} [ALT: \${sat.coords?.alt?.toFixed(1) || 400} KM]\`);
+
+      // Update 3D detailed model
+      if (satDetailedMesh) globeGroup.remove(satDetailedMesh);
+      satDetailedMesh = createDetailedSatelliteMesh(sat.category);
+      if (sat.coords) {
+        satDetailedMesh.position.copy(calculateSatellite3DPosition(sat.coords.lat, sat.coords.lon, sat.coords.alt));
+        satDetailedMesh.lookAt(0, 0, 0);
+      }
+      globeGroup.add(satDetailedMesh);
+
+      // Update active 3D orbit trajectory line
+      if (activeOrbitLine) globeGroup.remove(activeOrbitLine);
+      activeOrbitLine = createOrbitTrajectoryLine(sat.satrec, sat.period, '#00f0ff', 0.95, 90);
+      if (activeOrbitLine) globeGroup.add(activeOrbitLine);
+
+      // Update Sub-Satellite Ground Projection Laser and Footprint
+      updateSatelliteGroundProjections(sat);
+
+      // Update Camera Focus
+      if (!chaseCamActive && sat.coords) {
+        const phi = (sat.coords.lon + 180) * (Math.PI / 180);
+        const theta = (90 - sat.coords.lat) * (Math.PI / 180);
+        targetRotationY = (sat.coords.lon * Math.PI) / 180;
+        targetRotationX = ((sat.coords.lat - 15) * Math.PI) / 180;
+        targetCamPos = new THREE.Vector3(0, 20, 135);
+      }
+
+      // Populate Right Inspector Panel
+      inspectSatellite(sat);
+
+      // Update Chase Cam Banner if already active
+      if (chaseCamActive) {
+        const nameEl = document.getElementById('chase-sat-name') || document.getElementById('chase-cam-sat-name');
+        if (nameEl) nameEl.innerText = sat.name;
+        const speedEl = document.getElementById('chase-sat-speed');
+        if (speedEl) speedEl.innerText = (sat.coords?.vel || 7.66).toFixed(2) + ' km/s';
+      }
+
+      // Show Chase Cam Button
+      const chaseBtn = document.getElementById('btn-chase-cam');
+      if (chaseBtn) chaseBtn.style.display = 'inline-flex';
+
+      renderSatellitesListHtml();
+    }
+
+    /**
+     * Updates Sub-Satellite ground projection laser and coverage footprint circle.
+     */
+    function updateSatelliteGroundProjections(sat) {
+      if (!sat || !sat.coords) return;
+
+      const satPos = calculateSatellite3DPosition(sat.coords.lat, sat.coords.lon, sat.coords.alt);
+      const groundPos = latLonToVector3(sat.coords.lat, sat.coords.lon, GLOBE_RADIUS * 1.002);
+
+      // 1. Projection Laser Line
+      if (activeGroundLaser) globeGroup.remove(activeGroundLaser);
+      const laserGeo = new THREE.BufferGeometry().setFromPoints([satPos, groundPos]);
+      const laserMat = new THREE.LineBasicMaterial({
+        color: new THREE.Color(0x00f0ff),
+        transparent: true,
+        opacity: 0.65
+      });
+      activeGroundLaser = new THREE.Line(laserGeo, laserMat);
+      globeGroup.add(activeGroundLaser);
+
+      // 2. Communication Horizon Footprint Ring on Earth surface
+      if (activeFootprintRing) globeGroup.remove(activeFootprintRing);
+      const footRadius = Math.min(18, Math.max(3.5, Math.sqrt(sat.coords.alt) * 0.45));
+      const ringGeo = new THREE.RingGeometry(footRadius - 0.25, footRadius + 0.25, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.45
+      });
+      activeFootprintRing = new THREE.Mesh(ringGeo, ringMat);
+      activeFootprintRing.position.copy(groundPos);
+      activeFootprintRing.lookAt(0, 0, 0);
+      globeGroup.add(activeFootprintRing);
+    }
+
+    /**
+     * Populates the Right Inspector Panel with comprehensive real-time orbital reconnaissance telemetry.
+     */
+    function inspectSatellite(sat) {
+      if (!sat) return;
+      const col = SAT_COLORS[sat.category] || 'var(--cyan)';
+
+      document.getElementById('insp-name').innerText = '🛰️ ' + sat.name;
+      document.getElementById('insp-name').style.color = col;
+
+      const badge = document.getElementById('inspector-badge');
+      badge.innerText = 'ORBIT ' + sat.orbitType;
+      badge.style.borderColor = col;
+      badge.style.color = col;
+
+      const portBadge = document.getElementById('insp-port-badge');
+      const portState = document.getElementById('insp-port-state');
+      if (portBadge && portState) {
+        portBadge.innerText = \`● NORAD CAT: #\${sat.id} [\${sat.category.toUpperCase()}]\`;
+        portBadge.style.color = col;
+        portState.innerText = 'ORBITING';
+        portState.style.color = col;
+        portState.style.borderColor = col;
+      }
+
+      document.getElementById('insp-ip').innerText = sat.operator || 'International Space Agency';
+      
+      const latStr = sat.coords ? \`\${Math.abs(sat.coords.lat).toFixed(2)}° \${sat.coords.lat >= 0 ? 'N' : 'S'}\` : '--';
+      const lonStr = sat.coords ? \`\${Math.abs(sat.coords.lon).toFixed(2)}° \${sat.coords.lon >= 0 ? 'E' : 'W'}\` : '--';
+      document.getElementById('insp-geo').innerText = \`Sub-Satellite Point: \${latStr}, \${lonStr}\`;
+
+      const altKm = sat.coords?.alt || 400;
+      const altMi = altKm * 0.621371;
+      const velKms = sat.coords?.vel || 7.66;
+      const velKmh = velKms * 3600;
+      const velMph = velKmh * 0.621371;
+
+      document.getElementById('insp-coords').innerText = \`Alt: \${altKm.toFixed(1)} km (\${altMi.toFixed(0)} mi) | Speed: \${velKms.toFixed(2)} km/s\`;
+      document.getElementById('insp-route').innerText = \`Velocity: \${velKmh.toFixed(0)} km/h (\${velMph.toFixed(0)} mph) | Inc: \${sat.inclination.toFixed(1)}°\`;
+      document.getElementById('insp-isp').innerText = \`Period: ~\${sat.period.toFixed(1)} min per revolution (\${(1440 / sat.period).toFixed(1)} orbits/day)\`;
+
+      // Update Top Physical Address bar to show satellite sub-point safely
+      const topAddr = document.getElementById('top-address-text');
+      if (topAddr) topAddr.innerText = \`🛰️ \${sat.name} [ALT: \${altKm.toFixed(0)} KM | LAT: \${latStr}, LON: \${lonStr}]\`;
+      const cardAddr = document.getElementById('card-full-address');
+      if (cardAddr) cardAddr.innerText = \`🛰️ OVERFLIGHT: \${sat.name} (\${sat.operator}) // ALTITUDE: \${altKm.toFixed(1)} KM\`;
+      const cardCoords = document.getElementById('card-coords');
+      if (cardCoords) cardCoords.innerText = \`\${latStr}, \${lonStr}\`;
+      const cardIsp = document.getElementById('card-isp');
+      if (cardIsp) cardIsp.innerText = sat.operator || 'Space Agency';
+      const gearthLink = document.getElementById('card-gearth-link');
+      if (gearthLink) gearthLink.href = \`https://earth.google.com/web/@\${sat.coords?.lat || 0},\${sat.coords?.lon || 0},5000a,35y,0h,45t,0r\`;
+
+      const inspCloseBtn = document.getElementById('insp-close-btn');
+      if (inspCloseBtn) {
+        inspCloseBtn.style.display = 'block';
+        inspCloseBtn.innerText = '✕ DESELECT SATELLITE';
+        inspCloseBtn.onclick = deselectSatellite;
+      }
+    }
+
+    /**
+     * Deselects the current satellite and returns to overview.
+     */
+    function deselectSatellite() {
+      selectedSatellite = null;
+      toggleChaseCam(false);
+      if (satDetailedMesh) { globeGroup.remove(satDetailedMesh); satDetailedMesh = null; }
+      if (activeOrbitLine) { globeGroup.remove(activeOrbitLine); activeOrbitLine = null; }
+      if (activeGroundLaser) { globeGroup.remove(activeGroundLaser); activeGroundLaser = null; }
+      if (activeFootprintRing) { globeGroup.remove(activeFootprintRing); activeFootprintRing = null; }
+
+      const chaseBtn = document.getElementById('btn-chase-cam');
+      if (chaseBtn) chaseBtn.style.display = 'none';
+
+      focusMainSystem();
+      renderSatellitesListHtml();
+    }
+
+    /**
+     * Toggles Chase Cam Mode (locks camera right behind the satellite in orbit).
+     */
+    function toggleChaseCam(forceState) {
+      if (forceState !== undefined) {
+        chaseCamActive = forceState;
+      } else {
+        chaseCamActive = !chaseCamActive;
+      }
+
+      const banner = document.getElementById('chase-cam-banner');
+      const btn = document.getElementById('btn-chase-cam');
+
+      if (chaseCamActive && selectedSatellite) {
+        banner.style.display = 'flex';
+        const nameEl = document.getElementById('chase-sat-name') || document.getElementById('chase-cam-sat-name');
+        if (nameEl) nameEl.innerText = selectedSatellite.name;
+        const speedEl = document.getElementById('chase-sat-speed');
+        if (speedEl) speedEl.innerText = (selectedSatellite.coords?.vel || 7.66).toFixed(2) + ' km/s';
+        if (btn) {
+          btn.classList.add('active');
+          btn.innerHTML = '<span>🚀</span> CHASE CAM: ON';
+        }
+        playSelectSound();
+        addTickerEvent(\`[CHASE_CAM] COCKPIT ORBIT VIEW ENGAGED: \${selectedSatellite.name}\`);
+      } else {
+        chaseCamActive = false;
+        banner.style.display = 'none';
+        if (btn) {
+          btn.classList.remove('active');
+          btn.innerHTML = '<span>🚀</span> CHASE CAM';
+        }
+      }
+    }
+
+    /**
+     * Real-time animation update loop for all satellites in orbit.
+     */
+    function updateSatellitesTick(delta) {
+      if (liveSatellites.length === 0) return;
+
+      const now = new Date();
+      satStrobeTime += delta;
+
+      // Update positions every frame or every second
+      const shouldPropagateAll = (now.getTime() - lastSatPropTime) > 1000;
+      if (shouldPropagateAll) {
+        lastSatPropTime = now.getTime();
+      }
+
+      for (let i = 0; i < liveSatellites.length; i++) {
+        const sat = liveSatellites[i];
+        if (!sat.satrec || !sat.markerGroup) continue;
+
+        if (shouldPropagateAll) {
+          const coords = getSatelliteCoordinates(sat.satrec, now);
+          if (coords) {
+            sat.coords = coords;
+            const newPos = calculateSatellite3DPosition(coords.lat, coords.lon, coords.alt);
+            sat.markerGroup.position.copy(newPos);
+            sat.markerGroup.lookAt(0, 0, 0);
+
+            // Update detailed mesh and projection if this satellite is currently selected
+            if (selectedSatellite?.id === sat.id) {
+              if (satDetailedMesh) {
+                satDetailedMesh.position.copy(newPos);
+                satDetailedMesh.lookAt(0, 0, 0);
+              }
+              updateSatelliteGroundProjections(sat);
+              inspectSatellite(sat);
+            }
+          }
+        }
+      }
+
+      // Animate selected satellite holographic targeting reticle & beacon
+      if (satDetailedMesh) {
+        satDetailedMesh.rotation.z += delta * 0.8;
+      }
+      if (selectedSatellite?.markerGroup?.userData?.beaconMesh) {
+        const b = selectedSatellite.markerGroup.userData.beaconMesh;
+        b.visible = Math.floor(satStrobeTime * 4) % 2 === 0;
+      }
+    }
+
+    /**
+     * Toggles visibility of the Satellite Command Net HUD Modal.
+     */
+    function toggleSatellitesDeck() {
+      const modal = document.getElementById('satellites-modal');
+      const isVisible = modal.style.display === 'flex';
+      modal.style.display = isVisible ? 'none' : 'flex';
+
+      const btn = document.getElementById('btn-satellites-toggle');
+      if (btn) btn.classList.toggle('active', !isVisible);
+
+      if (!isVisible && liveSatellites.length === 0) {
+        loadLiveSatellites('all');
+      }
+      playSelectSound();
+    }
+
+    /**
+     * Sets active satellite category filter (all, stations, starlink, gps, weather, science).
+     */
+    function setSatelliteFilter(cat) {
+      currentSatCategory = cat;
+      const tabs = document.querySelectorAll('.sat-tab');
+      tabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-cat') === cat));
+
+      // Filter 3D satellite markers visibility
+      for (const sat of liveSatellites) {
+        if (sat.markerGroup) {
+          const visible = (cat === 'all' || sat.category === cat);
+          sat.markerGroup.visible = visible;
+        }
+      }
+
+      renderSatellitesListHtml();
+      playSelectSound();
+    }
+
+    /**
+     * Filters satellite list in real-time as user types into search box.
+     */
+    function filterSatellitesList() {
+      const input = document.getElementById('sat-search-input');
+      satSearchQuery = input ? input.value : '';
+      renderSatellitesListHtml();
+    }
+
+    /**
+     * Toggles visibility of all 3D satellites in orbit (hide / unhide).
+     */
+    function toggleSatellitesVisibility(forceState) {
+      if (forceState !== undefined) {
+        showAllSatellites = forceState;
+      } else {
+        showAllSatellites = !showAllSatellites;
+      }
+
+      satellitesGroup.visible = showAllSatellites;
+      if (satDetailedMesh) satDetailedMesh.visible = showAllSatellites;
+      if (activeGroundLaser) activeGroundLaser.visible = showAllSatellites;
+      if (activeFootprintRing) activeFootprintRing.visible = showAllSatellites;
+
+      // Update Bottom Bar Control Button
+      const btn = document.getElementById('btn-sats-hide-toggle');
+      if (btn) {
+        btn.classList.toggle('active', showAllSatellites);
+        btn.innerHTML = showAllSatellites ? '<span>🛰️</span> SATS: VISIBLE' : '<span>🙈</span> SATS: HIDDEN';
+        btn.style.borderColor = showAllSatellites ? 'rgba(0,240,255,0.45)' : 'rgba(255,82,82,0.6)';
+        btn.style.color = showAllSatellites ? 'var(--cyan)' : '#ff5252';
+      }
+
+      // Update Satellite HUD Modal Control Button
+      const modalBtn = document.getElementById('btn-modal-sat-vis-toggle');
+      if (modalBtn) {
+        modalBtn.classList.toggle('active', showAllSatellites);
+        modalBtn.innerHTML = showAllSatellites ? '👁️ SATS: ON' : '🙈 SATS: OFF';
+        modalBtn.style.color = showAllSatellites ? 'var(--cyan)' : '#ff5252';
+        modalBtn.style.borderColor = showAllSatellites ? 'var(--cyan)' : '#ff5252';
+      }
+
+      playSelectSound();
+      addTickerEvent(showAllSatellites ? '[SATELLITES] ALL ORBITING SATELLITES UNHIDDEN (VISIBLE)' : '[SATELLITES] ALL ORBITING SATELLITES HIDDEN');
+    }
+
+    /**
+     * Toggles 3D orbit trajectory lines on/off.
+     */
+    function toggleAllOrbits() {
+      showAllOrbits = !showAllOrbits;
+      orbitsGroup.visible = showAllOrbits;
+
+      const btn = document.getElementById('btn-orbits-toggle');
+      if (btn) {
+        btn.classList.toggle('active', showAllOrbits);
+        btn.innerHTML = showAllOrbits ? '<span>⭕</span> ORBITS: ON' : '<span>⭕</span> ORBITS: OFF';
+      }
+
+      const modalBtn = document.getElementById('btn-sat-orbits-toggle');
+      if (modalBtn) {
+        modalBtn.classList.toggle('active', showAllOrbits);
+      }
+      playSelectSound();
+    }
+
+    /**
+     * Toggles satellite billboard name labels in 3D.
+     */
+    function toggleSatelliteLabels() {
+      showSatLabels = !showSatLabels;
+      for (const sat of liveSatellites) {
+        if (sat.markerGroup?.userData?.labelSprite) {
+          sat.markerGroup.userData.labelSprite.visible = showSatLabels;
+        }
+      }
+      const btn = document.getElementById('btn-sat-labels-toggle');
+      if (btn) btn.classList.toggle('active', showSatLabels);
+      playSelectSound();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -2681,6 +4343,33 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
       mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
 
+      // Check satellite hover
+      if (showAllSatellites && satellitesGroup.visible) {
+        const satIntersects = raycaster.intersectObjects(satellitesGroup.children, true);
+        if (satIntersects.length > 0) {
+          let parent = satIntersects[0].object;
+          while (parent && !parent.userData?.satData && parent.parent) {
+            parent = parent.parent;
+          }
+          if (parent && parent.userData?.satData) {
+            const s = parent.userData.satData;
+            tooltip.style.display = 'block';
+            tooltip.style.left = e.clientX + 'px';
+            tooltip.style.top = e.clientY + 'px';
+            document.getElementById('tt-title').innerText = '🛰️ ' + s.name;
+            const altKm = s.coords?.alt ? \`\${s.coords.alt.toFixed(0)} KM\` : '400 KM';
+            const velKms = s.coords?.vel ? \`\${s.coords.vel.toFixed(2)} KM/S\` : '7.66 KM/S';
+            document.getElementById('tt-ip').innerText = \`● NORAD ID #\${s.id} [\${s.orbitType || 'ORBIT'}]\`;
+            const latStr = s.coords ? \`\${Math.abs(s.coords.lat).toFixed(2)}° \${s.coords.lat >= 0 ? 'N' : 'S'}\` : '--';
+            const lonStr = s.coords ? \`\${Math.abs(s.coords.lon).toFixed(2)}° \${s.coords.lon >= 0 ? 'E' : 'W'}\` : '--';
+            document.getElementById('tt-location').innerText = \`📍 SUB-POINT: \${latStr}, \${lonStr}\`;
+            document.getElementById('tt-route').innerText = \`ALT: \${altKm} | SPEED: \${velKms} (\${s.operator || 'Space Agency'})\`;
+            container.style.cursor = 'pointer';
+            return;
+          }
+        }
+      }
+
       const intersects = raycaster.intersectObjects(nodesGroup.children, true);
       if (intersects.length > 0) {
         let parent = intersects[0].object;
@@ -2710,6 +4399,22 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
       mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
+
+      // Check satellite click first
+      if (showAllSatellites && satellitesGroup.visible) {
+        const satIntersects = raycaster.intersectObjects(satellitesGroup.children, true);
+        if (satIntersects.length > 0) {
+          let parent = satIntersects[0].object;
+          while (parent && !parent.userData?.satData && parent.parent) {
+            parent = parent.parent;
+          }
+          if (parent && parent.userData?.satData) {
+            selectSatellite(parent.userData.satData);
+            return;
+          }
+        }
+      }
+
       const intersects = raycaster.intersectObjects(nodesGroup.children, true);
       if (intersects.length > 0) {
         let parent = intersects[0].object;
@@ -2718,6 +4423,16 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
         }
         if (parent && parent.userData?.nodeData) {
           focusNode(parent);
+        }
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (chaseCamActive) {
+          toggleChaseCam(false);
+        } else if (selectedSatellite) {
+          deselectSatellite();
         }
       }
     });
@@ -2837,6 +4552,21 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
         p.mesh.position.copy(pt);
       }
 
+      // Propagate and animate live satellites
+      if (typeof updateSatellitesTick === 'function') {
+        updateSatellitesTick(delta);
+      }
+
+      // Chase Cam mode: lock camera behind and slightly above selected satellite in orbit
+      if (typeof chaseCamActive !== 'undefined' && chaseCamActive && selectedSatellite?.markerGroup) {
+        const satWorldPos = new THREE.Vector3();
+        selectedSatellite.markerGroup.getWorldPosition(satWorldPos);
+        const normal = satWorldPos.clone().normalize();
+        const targetCam = satWorldPos.clone().add(normal.clone().multiplyScalar(7.5));
+        camera.position.lerp(targetCam, 0.08);
+        camera.lookAt(satWorldPos);
+      }
+
       renderer.render(scene, camera);
     }
     animate();
@@ -2897,6 +4627,14 @@ export function renderDashboardHtml({ activeTunnelsCount = 0, serverHost = 'loca
     fetchTelemetry();
     connectLiveStream();
     setInterval(fetchTelemetry, 3500);
+
+    // Initial Live Satellites Orbit Fetch & Recurring Telemetry Refresh
+    if (typeof loadLiveSatellites === 'function') {
+      loadLiveSatellites('all');
+      setInterval(() => {
+        loadLiveSatellites(currentSatCategory);
+      }, 120000);
+    }
   </script>
 </body>
 </html>`;
