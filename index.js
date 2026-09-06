@@ -22,6 +22,8 @@ import {
   hrtMs
 } from './protocol.js';
 import { renderDashboardHtml, renderNotFoundHtml } from './dashboard.js';
+import { resolveIpGeo, getServerGeo, getHostPcGeo, getWebClientGeo, calcDistanceKm, getNextClientColor } from './geoip.js';
+import { runTracert } from './traceroute.js';
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -34,6 +36,190 @@ const tunnels = new Map();
 
 // Client sessions: Map<sessionId, SessionEntry>
 const sessions = new Map();
+
+// Connected Web Dashboard sockets for live 3D Earth updates
+const dashboardSockets = new Set();
+
+/**
+ * Constructs the 3-point Triangulation Network Telemetry:
+ *  1. SWITCHER-TUNNEL (Host PC running switcher-tunnel.bat)
+ *  2. ONRENDER SERVER (Cloud Relay Server hosting the relay)
+ *  3. CLIENT WEB LOCATION (Web browser user viewing the dashboard)
+ * And the 3-way triangulating network lines connecting them!
+ */
+async function buildTriangulationTelemetry(host, visitorIp = '', customGeo = null) {
+  const renderGeo = await getServerGeo(host);
+
+  // Find primary client session if connected
+  let primarySession = null;
+  for (const [, s] of sessions) {
+    if (s.ws && s.ws.readyState === WebSocket.OPEN) {
+      primarySession = s;
+      break;
+    }
+  }
+
+  const hostPcGeo = await getHostPcGeo(primarySession?.clientIp);
+  const webClientGeo = await getWebClientGeo(visitorIp, customGeo, hostPcGeo);
+
+  // Collect all projects hosted on this Host PC
+  const hostProjects = [];
+  for (const [tid, route] of tunnels) {
+    hostProjects.push({
+      tunnelId: tid,
+      projectName: route.project?.name || tid,
+      localPort: route.project?.port || 3000,
+      proto: route.proto || 'http',
+      publicUrl: `http://${host}/t/${tid}/`,
+      subpathUrl: `/t/${tid}/`,
+      color: route.color || '#00f0ff'
+    });
+  }
+
+  // Calculate distances between the 3 vertices
+  const distPcToRender = calcDistanceKm(hostPcGeo.lat, hostPcGeo.lon, renderGeo.lat, renderGeo.lon);
+  const distRenderToWeb = calcDistanceKm(renderGeo.lat, renderGeo.lon, webClientGeo.lat, webClientGeo.lon);
+  const distWebToPc = calcDistanceKm(webClientGeo.lat, webClientGeo.lon, hostPcGeo.lat, hostPcGeo.lon);
+
+  // Node 1: Host PC (switcher-tunnel.bat)
+  const hostPcNode = {
+    id: 'host-pc',
+    nodeType: 'host_pc',
+    name: 'SWITCHER-TUNNEL // HOST PC',
+    script: 'switcher-tunnel.bat',
+    ip: hostPcGeo.ip,
+    location: hostPcGeo,
+    color: '#00e676', // Neon Emerald Green
+    status: tunnels.size > 0 ? 'online' : 'waiting',
+    projects: hostProjects,
+    localPorts: hostProjects.map(p => p.localPort),
+    distanceToRenderKm: distPcToRender
+  };
+
+  // Node 2: Onrender Server (Cloud Relay Hub)
+  const renderServerNode = {
+    id: 'render-server',
+    nodeType: 'render_server',
+    name: 'ONRENDER SERVER // CLOUD RELAY',
+    host: host || 'switcher-tunnel.onrender.com',
+    port: PORT,
+    ip: renderGeo.ip,
+    location: renderGeo,
+    color: '#ffd600', // Tactical Solar Gold
+    status: 'online',
+    version: VERSION,
+    uptimeMs: Date.now() - stats.startTime,
+    distanceToWebKm: distRenderToWeb
+  };
+
+  // Node 3: Client Web Location (Browser Visitor)
+  const webClientNode = {
+    id: 'web-client',
+    nodeType: 'web_client',
+    name: 'CLIENT WEB // BROWSER VISITOR',
+    ip: webClientGeo.ip,
+    location: webClientGeo,
+    color: '#ff007f', // Cyber Magenta
+    status: 'online',
+    userAgent: 'Web Dashboard Viewer',
+    distanceToPcKm: distWebToPc
+  };
+
+  // 3 Triangulating Arcs (Closed Triangulation Circuit)
+  // Leg 1: switcher-tunnel -> onrender server (Uplink)
+  // Leg 2: onrender server -> client web location (Downlink)
+  // Leg 3: client web location -> switcher-tunnel (Triangulation Mesh Loop)
+  const arcList = [
+    {
+      id: 'arc-pc-to-render',
+      type: 'uplink',
+      fromId: 'host-pc',
+      toId: 'render-server',
+      from: { lat: hostPcGeo.lat, lon: hostPcGeo.lon, city: hostPcGeo.city, country: hostPcGeo.country, label: 'SWITCHER-TUNNEL (PC)' },
+      to: { lat: renderGeo.lat, lon: renderGeo.lon, city: renderGeo.city, country: renderGeo.country, label: 'ONRENDER SERVER' },
+      color: '#00e676',
+      label: 'UPLINK: SWITCHER-TUNNEL ──► ONRENDER SERVER',
+      distanceKm: distPcToRender
+    },
+    {
+      id: 'arc-render-to-web',
+      type: 'downlink',
+      fromId: 'render-server',
+      toId: 'web-client',
+      from: { lat: renderGeo.lat, lon: renderGeo.lon, city: renderGeo.city, country: renderGeo.country, label: 'ONRENDER SERVER' },
+      to: { lat: webClientGeo.lat, lon: webClientGeo.lon, city: webClientGeo.city, country: webClientGeo.country, label: 'CLIENT WEB' },
+      color: '#ffd600',
+      label: 'DOWNLINK: ONRENDER SERVER ──► CLIENT WEB',
+      distanceKm: distRenderToWeb
+    },
+    {
+      id: 'arc-web-to-pc',
+      type: 'triangulate',
+      fromId: 'web-client',
+      toId: 'host-pc',
+      from: { lat: webClientGeo.lat, lon: webClientGeo.lon, city: webClientGeo.city, country: webClientGeo.country, label: 'CLIENT WEB' },
+      to: { lat: hostPcGeo.lat, lon: hostPcGeo.lon, city: hostPcGeo.city, country: hostPcGeo.country, label: 'SWITCHER-TUNNEL (PC)' },
+      color: '#ff007f',
+      label: 'TRIANGULATION MESH: CLIENT WEB ──► SWITCHER-TUNNEL',
+      distanceKm: distWebToPc
+    }
+  ];
+
+  return {
+    triangulation: {
+      hostPc: hostPcNode,
+      renderServer: renderServerNode,
+      webClient: webClientNode
+    },
+    nodes: [hostPcNode, renderServerNode, webClientNode],
+    arcs: arcList,
+    server: renderServerNode,
+    hostPc: hostPcNode,
+    webClient: webClientNode,
+    projects: hostProjects,
+    tunnelsCount: hostProjects.length,
+    openPorts: [
+      { type: 'relay', port: PORT, label: 'ONRENDER SERVER HUB', proto: 'http/tcp', status: 'listening', host },
+      ...hostProjects.map(p => ({
+        type: 'client',
+        tunnelId: p.tunnelId,
+        projectName: p.projectName,
+        port: p.localPort,
+        proto: p.proto,
+        publicUrl: p.publicUrl,
+        subpathUrl: p.subpathUrl,
+        clientIp: hostPcNode.ip,
+        status: 'open_forwarded'
+      }))
+    ],
+    totalRequests: stats.totalRequests,
+    totalBytes: stats.totalBytes,
+    totalTcpConnections: stats.totalTcpConnections,
+    uptimeMs: Date.now() - stats.startTime,
+    avgLatencyMs: Math.round(stats.avgLatencyMs * 100) / 100,
+    version: VERSION
+  };
+}
+
+/**
+ * Broadcast real-time 3D Earth network graph updates to all active dashboard viewers
+ */
+async function broadcastDashboardUpdate() {
+  if (dashboardSockets.size === 0) return;
+  const host = process.env.HOST || (HOST === '0.0.0.0' ? `localhost:${PORT}` : `${HOST}:${PORT}`);
+  const telemetry = await buildTriangulationTelemetry(host);
+
+  const payload = JSON.stringify({
+    type: 'GRAPH_UPDATE',
+    ...telemetry
+  });
+
+  for (const clientWs of dashboardSockets) {
+    if (clientWs.readyState === WebSocket.OPEN) {
+      try { clientWs.send(payload); } catch {}
+    }
+  }
+}
 
 // Global telemetry
 const stats = {
@@ -129,7 +315,7 @@ const server = http.createServer({
   keepAlive: true,
   keepAliveTimeout: 65000,
   maxHeaderSize: 32768
-}, (req, res) => {
+}, async (req, res) => {
   // Disable Nagle's algorithm for instant packet dispatch
   if (req.socket.setNoDelay) req.socket.setNoDelay(true);
 
@@ -141,23 +327,167 @@ const server = http.createServer({
     return res.end('STARK_ENGINE_ONLINE');
   }
 
-  // Telemetry API for JARVIS HUD
-  if (req.url === '/api/telemetry') {
+  // Telemetry & Spatial Network Graph API for 3D Globe HUD (Triangulation Network)
+  if (req.url?.startsWith('/api/telemetry') || req.url?.startsWith('/api/network-nodes')) {
+    const visitorIp = req.headers['cf-connecting-ip'] ||
+      (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : req.socket.remoteAddress);
+
+    let customGeo = null;
+    try {
+      const u = new URL(req.url, `http://${host}`);
+      const lat = parseFloat(u.searchParams.get('lat'));
+      const lon = parseFloat(u.searchParams.get('lon'));
+      const city = u.searchParams.get('city');
+      const country = u.searchParams.get('country');
+      if (!isNaN(lat) && !isNaN(lon)) {
+        customGeo = { lat, lon, city, country };
+      }
+    } catch {}
+
+    const telemetry = await buildTriangulationTelemetry(host, visitorIp, customGeo);
     res.writeHead(200, {
       'content-type': 'application/json',
       'cache-control': 'no-store',
       'access-control-allow-origin': '*'
     });
-    return res.end(JSON.stringify({
-      tunnelsCount: tunnels.size,
-      activeProjects: Array.from(tunnels.keys()),
-      totalRequests: stats.totalRequests,
-      totalBytes: stats.totalBytes,
-      totalTcpConnections: stats.totalTcpConnections,
-      uptimeMs: Date.now() - stats.startTime,
-      avgLatencyMs: Math.round(stats.avgLatencyMs * 100) / 100,
-      version: VERSION
-    }));
+    return res.end(JSON.stringify(telemetry));
+  }
+
+  // Client Web Geolocation Update Endpoint (allows browser to report its detected GPS)
+  if (req.url?.startsWith('/api/client-geo')) {
+    try {
+      const u = new URL(req.url, `http://${host}`);
+      const lat = parseFloat(u.searchParams.get('lat'));
+      const lon = parseFloat(u.searchParams.get('lon'));
+      const city = u.searchParams.get('city') || 'Browser GPS';
+      const country = u.searchParams.get('country') || 'Detected Location';
+      const visitorIp = req.headers['cf-connecting-ip'] ||
+        (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : req.socket.remoteAddress);
+
+      let customGeo = null;
+      if (!isNaN(lat) && !isNaN(lon)) {
+        customGeo = { lat, lon, city, country };
+      }
+      const telemetry = await buildTriangulationTelemetry(host, visitorIp, customGeo);
+      broadcastDashboardUpdate();
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*'
+      });
+      return res.end(JSON.stringify({ success: true, clientGeo: telemetry.webClient }));
+    } catch (err) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: err.message }));
+    }
+  }
+
+  // Network Traceroute (tracert) Inspection Endpoint
+  if (req.url?.startsWith('/api/tracert')) {
+    try {
+      const u = new URL(req.url, `http://${host}`);
+      let target = u.searchParams.get('target') || '8.8.8.8';
+      let targetName = target;
+
+      // If target matches a triangulation node or tunnelId
+      if (target === 'host-pc' || target === 'switcher-tunnel') {
+        const hostPcGeo = await getHostPcGeo();
+        target = hostPcGeo.ip || '106.219.132.148';
+        targetName = 'SWITCHER-TUNNEL // HOST PC';
+      } else if (target === 'render-server') {
+        target = '216.24.57.1';
+        targetName = 'ONRENDER SERVER // CLOUD RELAY';
+      } else if (target === 'web-client') {
+        target = '82.165.197.1';
+        targetName = 'CLIENT WEB // BROWSER VISITOR';
+      } else if (tunnels.has(target.toLowerCase())) {
+        const route = tunnels.get(target.toLowerCase());
+        target = route.session?.clientIp || '127.0.0.1';
+        targetName = route.project?.name || target;
+      }
+
+      const traceResult = await runTracert(target);
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*'
+      });
+      return res.end(JSON.stringify({ ...traceResult, targetName }));
+    } catch (err) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: err.message }));
+    }
+  }
+
+  // Remote Tunnel Close & Host Process Termination Endpoint
+  if (req.url?.startsWith('/api/tunnel/close')) {
+    try {
+      const u = new URL(req.url, `http://${host}`);
+      const targetTunnelId = (u.searchParams.get('tunnelId') || '').toLowerCase().trim();
+      const killLocalProcess = u.searchParams.get('killApp') !== 'false';
+      const terminateClient = u.searchParams.get('terminateClient') === 'true';
+
+      if (!targetTunnelId || !tunnels.has(targetTunnelId)) {
+        res.writeHead(404, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+        return res.end(JSON.stringify({ error: `Tunnel '${targetTunnelId}' not found or already closed` }));
+      }
+
+      const route = tunnels.get(targetTunnelId);
+      const localPort = route.project?.port || 3000;
+      const session = route.session;
+
+      console.log(`[🛑 STARK RELAY] Remote close requested for tunnel '${targetTunnelId}' (Port :${localPort}) from web dashboard`);
+
+      // 1. Notify the client on the PC over WebSocket to close the tunnel and terminate the PC app process
+      if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
+        session.ws.send(encodeJson(MSG.TUNNEL_CLOSE, {
+          tunnelId: targetTunnelId,
+          localPort,
+          killLocalProcess,
+          terminateClient
+        }));
+      }
+
+      // 2. Clean up route on relay server
+      tunnels.delete(targetTunnelId);
+      if (session) {
+        session.registeredTunnels.delete(targetTunnelId);
+        // Evict any pending requests for this tunnel
+        for (const [reqId, pending] of session.pendingRequests) {
+          if (pending.tunnelId === targetTunnelId) {
+            clearTimeout(pending.timer);
+            if (!pending.res.headersSent) {
+              pending.res.writeHead(502, { 'content-type': 'text/plain' });
+              pending.res.end('Switcher Tunnel: Tunnel closed remotely from web');
+            }
+            session.pendingRequests.delete(reqId);
+          }
+        }
+        // If session has no more tunnels left, or terminateClient is true, close session cleanly
+        if (session.registeredTunnels.size === 0 || terminateClient) {
+          try { session.ws.close(); } catch {}
+          sessions.delete(session.sessionId);
+        }
+      }
+
+      // 3. Broadcast real-time update to all connected dashboard websockets
+      broadcastDashboardUpdate();
+
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*'
+      });
+      return res.end(JSON.stringify({
+        success: true,
+        tunnelId: targetTunnelId,
+        localPort,
+        message: `Tunnel '${targetTunnelId}' and port :${localPort} closed successfully`
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: err.message }));
+    }
   }
 
   // Redirect /t/:tunnelId (without trailing slash) to /t/:tunnelId/
@@ -178,12 +508,14 @@ const server = http.createServer({
   // Landing page if no tunnel targeted
   if (!resolved) {
     if (req.url === '/' || req.url === '/index.html') {
+      const serverGeo = await getServerGeo(host);
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(renderDashboardHtml({
         activeTunnelsCount: tunnels.size,
         serverHost: host,
         version: VERSION,
-        stats
+        stats,
+        serverGeo
       }));
     }
     if (req.url === '/favicon.ico') {
@@ -327,13 +659,16 @@ function handleControlConnection(ws, req, url) {
   if (ws._socket?.setNoDelay) ws._socket.setNoDelay(true);
   if (ws._socket?.setKeepAlive) ws._socket.setKeepAlive(true, 15000);
 
-  // Ping client for dashboard
+  // Real-time HUD Dashboard client
   if (url.searchParams.get('client') === 'web-dashboard') {
+    dashboardSockets.add(ws);
     ws.on('message', (data) => ws.send(data));
+    ws.on('close', () => dashboardSockets.delete(ws));
+    ws.on('error', () => dashboardSockets.delete(ws));
     return;
   }
 
-  ws.on('message', (message, isBinary) => {
+  ws.on('message', async (message, isBinary) => {
     if (isBinary) {
       const buf = Buffer.isBuffer(message) ? message : Buffer.from(message);
       const msgType = buf[0];
@@ -404,11 +739,19 @@ function handleControlConnection(ws, req, url) {
         const secure = req.headers['x-forwarded-proto'] === 'https' || req.headers['x-forwarded-ssl'] === 'on';
         const proto = secure ? 'https' : 'http';
 
+        const clientIp = req.headers['cf-connecting-ip'] ||
+          (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : req.socket.remoteAddress);
+        const color = getNextClientColor();
+        const geo = await resolveIpGeo(clientIp, sessionId);
+
         session = {
           sessionId,
           clientId: msg.clientId || null,
           ws,
-          clientIp: req.socket.remoteAddress,
+          clientIp,
+          geo,
+          color,
+          connectedAt: Date.now(),
           registeredTunnels: new Set(),
           pendingRequests: new Map(),
           wsProxies: new Map(),
@@ -463,10 +806,15 @@ function handleControlConnection(ws, req, url) {
             }
           }
 
+          const projectColor = getNextClientColor();
+          const projectGeo = geo.isLocal ? await resolveIpGeo(clientIp, tid) : geo;
+
           const route = {
             tunnelId: tid,
             project: { ...p, id: tid },
             session,
+            color: projectColor,
+            geo: projectGeo,
             proto: p.proto || 'http'
           };
 
@@ -497,6 +845,7 @@ function handleControlConnection(ws, req, url) {
         }));
 
         console.log(`[⚡ STARK RELAY] Registered ${ackProjects.length} project(s) for client ${session.clientIp}`);
+        broadcastDashboardUpdate();
         break;
       }
 
@@ -573,6 +922,7 @@ function handleControlConnection(ws, req, url) {
       for (const [, s] of session.wsProxies) s.destroy();
       for (const [, b] of session.tcpBridges) b.close();
       sessions.delete(session.sessionId);
+      broadcastDashboardUpdate();
     }
   });
 
@@ -645,6 +995,9 @@ function handleRawTcpBridge(tcpWs, session, tunnelId) {
 
 // ─── Start Server ────────────────────────────────────────────────
 server.listen(PORT, HOST, () => {
+  // Pre-fetch server geolocation in the background
+  getServerGeo(HOST).catch(() => {});
+
   console.log(`
   ╔═════════════════════════════════════════════════════════════════════╗
   ║  ⚡ SWITCHER TUNNEL RELAY v${VERSION} (STARK INDUSTRIES STACK)        ║

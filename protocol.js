@@ -32,9 +32,11 @@ export const MSG = {
   TCP_CLOSE:    0x42,
 
   // Multi-Project Management
-  PROJECT_ADD:  0x50,
-  PROJECT_DEL:  0x51,
-  PROJECT_LIST: 0x52
+  PROJECT_ADD:     0x50,
+  PROJECT_DEL:     0x51,
+  PROJECT_LIST:    0x52,
+  TUNNEL_CLOSE:    0x53,
+  CLIENT_SHUTDOWN: 0x54
 };
 
 // ─── Fast Monotonic uint32 ID Generator ──────────────────────────
