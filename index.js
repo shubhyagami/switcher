@@ -902,7 +902,7 @@ function handleControlConnection(ws, req, url) {
 
           // Subpath URL rewriting
           if (pending.mode === 'subpath') {
-            if (headers.location?.startsWith('/')) {
+            if (headers.location?.startsWith('/') && !headers.location.startsWith(`/t/${pending.tunnelId}/`) && headers.location !== `/t/${pending.tunnelId}`) {
               headers.location = `/t/${pending.tunnelId}${headers.location}`;
             }
             // Cookie path rewrite & active tunnel persistence
@@ -978,10 +978,16 @@ function handleAppWsUpgrade(req, socket, head, route, rewrittenPath) {
   // Preserve Apache Guacamole subprotocol: Sec-WebSocket-Protocol: guacamole
   const protocols = req.headers['sec-websocket-protocol'] || null;
 
+  const fwdHeaders = { ...req.headers };
+  fwdHeaders['x-forwarded-for'] = req.socket.remoteAddress || '127.0.0.1';
+  fwdHeaders['x-forwarded-proto'] = req.headers['x-forwarded-proto'] || 'https';
+  fwdHeaders['x-forwarded-host'] = req.headers.host || '';
+  fwdHeaders['x-tunnel-id'] = route.project ? route.project.name : '';
+
   route.session.ws.send(encodeJson(MSG.WS_OPEN, {
     id: wsId,
     u: rewrittenPath,
-    h: compressHeaders(req.headers),
+    h: compressHeaders(fwdHeaders),
     proto: protocols,
     proj: route.project ? route.project.name : null
   }));

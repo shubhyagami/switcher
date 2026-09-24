@@ -208,7 +208,7 @@ export async function getServerGeo(serverHost = '') {
           isServer: true,
           role: 'render_server',
           label: 'ONRENDER SERVER // CLOUD RELAY',
-          host: serverHost || process.env.RENDER_EXTERNAL_HOSTNAME || 'switcher-3x85.onrender.com'
+          host: serverHost || process.env.RENDER_EXTERNAL_HOSTNAME || 'switcher-one.onrender.com'
         };
         return cachedRenderGeo;
       }
@@ -216,7 +216,7 @@ export async function getServerGeo(serverHost = '') {
   }
 
   // 2. Resolve DNS for serverHost if it contains onrender.com
-  if (hostStr.includes('onrender.com') || hostStr.includes('switcher-3x85')) {
+  if (hostStr.includes('onrender.com') || hostStr.includes('switcher-one')) {
     try {
       const geo = await resolveIpGeo('216.24.57.7', 'render-dns');
       cachedRenderGeo = {
@@ -227,7 +227,7 @@ export async function getServerGeo(serverHost = '') {
         isServer: true,
         role: 'render_server',
         label: 'ONRENDER SERVER // CLOUD RELAY',
-        host: serverHost || 'switcher-3x85.onrender.com'
+        host: serverHost || 'switcher-one.onrender.com'
       };
       return cachedRenderGeo;
     } catch {}
@@ -249,7 +249,7 @@ export async function getServerGeo(serverHost = '') {
     isServer: true,
     role: 'render_server',
     label: 'ONRENDER SERVER // CLOUD RELAY',
-    host: serverHost || 'switcher-3x85.onrender.com'
+    host: serverHost || 'switcher-one.onrender.com'
   };
   return cachedRenderGeo;
 }
