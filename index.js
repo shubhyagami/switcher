@@ -1,3 +1,18 @@
+function isRelaySystemUrl(url) {
+    if (!url) return false;
+    if (url === '/' || url === '/index.html' || url === '/favicon.ico') return true;
+    if (url.startsWith('/health') || url.startsWith('/switcher-')) return true;
+    if (url.startsWith('/api/telemetry') ||
+        url.startsWith('/api/network-nodes') ||
+        url.startsWith('/api/client-geo') ||
+        url.startsWith('/api/satellites') ||
+        url.startsWith('/api/tracert') ||
+        url.startsWith('/api/tunnel/close')) {
+        return true;
+    }
+    return false;
+}
+
 /**
  * SWITCHER TUNNEL - ULTRA RELAY SERVER v3 (STARK INDUSTRIES STACK)
  * Optimized for Render.com deployment with maximum data transfer speed.
@@ -290,7 +305,7 @@ function resolveTunnel(req) {
       const refMatch = refUrl.pathname.match(/^\/t\/([a-zA-Z0-9_-]+)(?:\/|$)/);
       if (refMatch && tunnels.has(refMatch[1].toLowerCase())) {
         const tid = refMatch[1].toLowerCase();
-        if (!url.startsWith('/health') && !url.startsWith('/api/') && !url.startsWith('/switcher-') && url !== '/' && url !== '/index.html') {
+        if (!isRelaySystemUrl(url)) {
           return { id: tid, path: url, mode: 'referer' };
         }
       }
@@ -302,7 +317,7 @@ function resolveTunnel(req) {
     const m = req.headers.cookie.match(/switcher_tunnel=([a-zA-Z0-9_-]+)/);
     if (m && tunnels.has(m[1].toLowerCase())) {
       const tid = m[1].toLowerCase();
-      if (!url.startsWith('/health') && !url.startsWith('/api/') && !url.startsWith('/switcher-') && url !== '/' && url !== '/index.html') {
+      if (!isRelaySystemUrl(url)) {
         return { id: tid, path: url, mode: 'cookie' };
       }
     }
